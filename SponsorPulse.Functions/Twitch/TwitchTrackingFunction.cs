@@ -11,7 +11,7 @@ using SponsorPulse.Domain.Models.Twitch;
 using SponsorPulse.Domain.Primitives;
 using SponsorPulse.Infrastructure.Persistence;
 using SponsorPulse.Infrastructure.Services;
-using Microsoft.Azure.Functions.Worker;
+
 
 namespace SponsorPulse_Functions.Twitch;
 

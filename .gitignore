@@ -280,3 +280,9 @@ SponsorPulse/appsettings.Development.json
 .kombai/*
 SponsorPulse/Properties/*
 __azurite*.json
+AzuriteConfig
+.gitignore
+SponsorPulse/SponsorPulse.db
+SponsorPulse/SponsorPulse.db-shm
+SponsorPulse/SponsorPulse.db-wal
+__blobstorage__/c1fcd77f-2ac0-4f5f-b631-626fa7e7642f

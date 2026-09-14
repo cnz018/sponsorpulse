@@ -90,7 +90,7 @@
                     <div>
                         <span class="text-gray-400 block text-xs">Durée</span>
                         <span class="text-white font-mono">@(EventToUpdate.StreamDuration?.ToString(@"hh\:mm") ??
-                                                                                                                                                                                            "--:--")</span>
+                                                                                                                                                                                                                                                                                "--:--")</span>
                         </div>
                     </div>
                 </div>
@@ -190,7 +190,7 @@
     private bool ShowManualInput = false;
     private string? ErrorMessage;
     // Adresse locale par défaut de l'Azure Function
-    private const string AzureFunctionBaseUrl = "http://localhost:7290/api";
+    private readonly string AzureFunctionBaseUrl = "http://localhost:7075/api";
 
     // Helper for binding TimeSpan to text input
     private string StreamDurationString
