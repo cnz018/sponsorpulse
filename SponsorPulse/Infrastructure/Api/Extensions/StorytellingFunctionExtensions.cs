@@ -1,5 +1,4 @@
 using SponsorPulse.Application.Common.Interfaces;
-using SponsorPulse.Application.Common.Models;
 
 namespace SponsorPulse.Infrastructure.Api.Extensions;
 
@@ -7,23 +6,22 @@ public static class StorytellingFunctionExtensions
 {
     public static WebApplication MapStorytellingFunctionEndpoints(this WebApplication app)
     {
-        app.MapPost("/api/storytelling/generate", GenerateStorytelling)
+        app.MapPost("/api/storytelling/generate/{slug}", GenerateStorytelling)
             .WithName("GenerateStorytelling");
 
         return app;
     }
 
     private static async Task<IResult> GenerateStorytelling(
-        StorytellingRequest request,
-        IServiceProvider serviceProvider
+        string slug,
+        IStorytellingService storytellingService,
+        CancellationToken cancellationToken
     )
     {
-        if (request is null)
-            return Results.BadRequest(new { error = "Invalid request body" });
+        var response = await storytellingService.GenerateStorytellingAsync(slug, cancellationToken);
 
-        var storytellingService = serviceProvider.GetRequiredService<IStorytellingService>();
-        var response = await storytellingService.GenerateStorytellingAsync(request);
-
-        return Results.Ok(response);
+        return response.Success
+            ? Results.Ok(response)
+            : Results.StatusCode((int)response.StatusCode);
     }
 }

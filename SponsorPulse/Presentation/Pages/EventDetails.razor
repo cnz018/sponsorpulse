@@ -13,11 +13,12 @@
 @using Microsoft.AspNetCore.Components.Authorization
 
 @inject IDbContextFactory<SponsorPulseDbContext> DbFactory
+@inject IDbContextFactory<SponsorPulseAnalyticsDbContext> AnalyticsDbFactory
 @inject IMediaStorageService MediaStorageService
 @inject NavigationManager Navigation
 
 @inject AuthenticationStateProvider AuthStateProvider
-@inject IDemoDataService DemoDataService
+@inject IStorytellingService StorytellingService
 
 <PageTitle>@(_event?.Name ?? "Détails") - SponsorPulse</PageTitle>
 
@@ -66,1099 +67,1143 @@
                     <p class="text-gray-300 leading-relaxed">@(_event.Description ?? "Aucune description fournie.")</p>
                 </div>
 
+                <div class="section mb-6 storytelling-section">
+                    <div class="section-heading-row">
+                        <h3 class="section-title">Analyse storytelling</h3>
+                        <button class="btn-analysis" @onclick="RunStorytellingAnalysis" disabled="@_isAnalyzing">
+                            @if (_isAnalyzing)
+                            {
+                                <span>Analyse en cours...</span>
+                            }
+                            else
+                            {
+                                <span>Lancer l'analyse</span>
+                            }
+                        </button>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(_analysisError))
+                    {
+                        <p class="analysis-error">@_analysisError</p>
+                    }
+                    else if (_storytelling?.Slides.Count > 0)
+                    {
+                        <div class="storytelling-slides">
+                            @foreach (var slide in _storytelling.Slides)
+                            {
+                                <article class="storytelling-slide">
+                                    <h4>@slide.Titre</h4>
+                                    <p>@slide.Contenu</p>
+                                </article>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-gray-400">Aucune analyse générée pour le moment.</p>
+                    }
+                </div>
+
                 @if (_event.StreamPlatform == "Twitch")
                 {
                     <div class="section mb-6">
                         <h3 class="section-title">Données Stream</h3>
-                        @if (DemoDataService.IsInDemoMode)
+                        <TwitchFetcher EventToUpdate="@_event" OnDataUpdated="HandleDataUpdated" />
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(_event.TwitterHashtags))
+                {
+                    <div class="section mb-6">
+                        <h3 class="section-title">Données Twitter</h3>
+                        @if (_event.TwitterAnalytics != null)
                         {
-                            <div class="demo-twitch-metrics">
+                            <div class="demo-twitter-metrics">
+                                <div class="hero-metric">
+                                    <div class="hero-metric-label">
+                                        <img src="https://api.iconify.design/ic:outline-monetization-on.svg" class="hero-icon"
+                                             alt="" />
+                                        <span>Valeur Publicitaire</span>
+                                    </div>
+                                    <span class="hero-metric-value">@_event.TwitterAnalytics.AdValueEquivalent.ToString("C0")</span>
+                                </div>
                                 <div class="detail-stats-row">
                                     <div class="detail-stat-card">
                                         <div class="dsc-header">
-                                            <img src="https://api.iconify.design/ic:outline-remove-red-eye.svg" class="dsc-icon"
-                                                 alt="" />
-                                            <span class="dsc-label">Viewers Actuels</span>
+                                            <img src="https://api.iconify.design/ic:outline-tag.svg" class="dsc-icon" alt="" />
+                                            <span class="dsc-label">Total Tweets</span>
                                         </div>
-                                        <span class="dsc-value">@_event.ViewerCount?.ToString("N0")</span>
+                                        <span class="dsc-value">@_event.TwitterAnalytics.TotalTweets.ToString("N0")</span>
                                     </div>
+                                    <div class="detail-stat-card">
+                                        <div class="dsc-header">
+                                            <img src="https://api.iconify.design/ic:outline-message.svg" class="dsc-icon" alt="" />
+                                            <span class="dsc-label">Engagement Total</span>
+                                        </div>
+                                        <span class="dsc-value">@_event.TwitterAnalytics.TotalEngagement.ToString("N0")</span>
+                                    </div>
+                                    <div class="detail-stat-card">
+                                        <div class="dsc-header">
+                                            <img src="https://api.iconify.design/ic:outline-monitor.svg" class="dsc-icon" alt="" />
+                                            <span class="dsc-label">Impressions</span>
+                                        </div>
+                                        <span class="dsc-value">@_event.TwitterAnalytics.EstimatedImpressions.ToString("N0")</span>
+                                    </div>
+                                </div>
+
+                                @* Nouvelles métriques complémentaires *@
+                                <div class="detail-stats-row mt-4">
                                     <div class="detail-stat-card">
                                         <div class="dsc-header">
                                             <img src="https://api.iconify.design/ic:outline-trending-up.svg" class="dsc-icon"
                                                  alt="" />
-                                            <span class="dsc-label">Pic de Viewers</span>
+                                            <span class="dsc-label">ROI Estimé</span>
                                         </div>
-                                        <span class="dsc-value">@_event.PeakViewers?.ToString("N0")</span>
+                                        <span class="dsc-value">@_event.TwitterAnalytics.EstimatedROI.ToString("C0")</span>
                                     </div>
                                     <div class="detail-stat-card">
                                         <div class="dsc-header">
-                                            <img src="https://api.iconify.design/ic:outline-timer.svg" class="dsc-icon" alt="" />
-                                            <span class="dsc-label">Durée</span>
+                                            <img src="https://api.iconify.design/ic:outline-people.svg" class="dsc-icon" alt="" />
+                                            <span class="dsc-label">Reach Unique</span>
                                         </div>
-                                        <span class="dsc-value">@(_event.StreamDuration?.Hours)h
-                                            @(_event.StreamDuration?.Minutes)m</span>
-                                        </div>
+                                        <span class="dsc-value">@FormatNumber(_event.TwitterAnalytics.UniqueReach)</span>
                                     </div>
-                                    @if (!string.IsNullOrEmpty(_event.GameName))
-                                    {
-                                        <div class="info-field">
-                                            <span class="info-field-label">Jeu</span>
-                                            <span class="info-field-value">@_event.GameName</span>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                        else
-                            {
-                                <TwitchFetcher EventToUpdate="@_event" OnDataUpdated="HandleDataUpdated" />
-                            }
-                        </div>
-                    }
-
-                    @if (!string.IsNullOrEmpty(_event.TwitterHashtags))
-                    {
-                        <div class="section mb-6">
-                            <h3 class="section-title">Données Twitter</h3>
-                            @if (DemoDataService.IsInDemoMode && _event.TwitterAnalytics != null)
-                            {
-                                <div class="demo-twitter-metrics">
-                                    <div class="hero-metric">
-                                        <div class="hero-metric-label">
-                                            <img src="https://api.iconify.design/ic:outline-monetization-on.svg" class="hero-icon"
+                                    <div class="detail-stat-card">
+                                        <div class="dsc-header">
+                                            <img src="https://api.iconify.design/ic:outline-account-balance.svg" class="dsc-icon"
                                                  alt="" />
-                                            <span>Valeur Publicitaire</span>
+                                            <span class="dsc-label">CPM</span>
                                         </div>
-                                        <span class="hero-metric-value">@_event.TwitterAnalytics.AdValueEquivalent.ToString("C0")</span>
+                                        <span class="dsc-value">@_event.TwitterAnalytics.CPM.ToString("C2")</span>
                                     </div>
-                                    <div class="detail-stats-row">
-                                        <div class="detail-stat-card">
-                                            <div class="dsc-header">
-                                                <img src="https://api.iconify.design/ic:outline-tag.svg" class="dsc-icon" alt="" />
-                                                <span class="dsc-label">Total Tweets</span>
-                                            </div>
-                                            <span class="dsc-value">@_event.TwitterAnalytics.TotalTweets.ToString("N0")</span>
-                                        </div>
-                                        <div class="detail-stat-card">
-                                            <div class="dsc-header">
-                                                <img src="https://api.iconify.design/ic:outline-message.svg" class="dsc-icon" alt="" />
-                                                <span class="dsc-label">Engagement Total</span>
-                                            </div>
-                                            <span class="dsc-value">@_event.TwitterAnalytics.TotalEngagement.ToString("N0")</span>
-                                        </div>
-                                        <div class="detail-stat-card">
-                                            <div class="dsc-header">
-                                                <img src="https://api.iconify.design/ic:outline-monitor.svg" class="dsc-icon" alt="" />
-                                                <span class="dsc-label">Impressions</span>
-                                            </div>
-                                            <span class="dsc-value">@_event.TwitterAnalytics.EstimatedImpressions.ToString("N0")</span>
-                                        </div>
-                                    </div>
+                                </div>
 
-                                    @* Nouvelles métriques complémentaires *@
-                                    <div class="detail-stats-row mt-4">
-                                        <div class="detail-stat-card">
-                                            <div class="dsc-header">
-                                                <img src="https://api.iconify.design/ic:outline-trending-up.svg" class="dsc-icon"
+                                @* Top Influenceur *@
+                                <div class="section mt-6">
+                                    <h3 class="section-title">Top Influenceur</h3>
+                                    <div class="influencer-card">
+
+                                        @if (_event.TwitterAnalytics.TopInfluencer != null &&
+                            !string.IsNullOrEmpty(_event.TwitterAnalytics.TopInfluencer.Handle))
+                                        {
+                                            <div class="influencer-header">
+                                                <img src="https://api.iconify.design/ic:outline-star.svg" class="influencer-icon"
                                                      alt="" />
-                                                <span class="dsc-label">ROI Estimé</span>
+                                                <span class="influencer-name">@_event.TwitterAnalytics.TopInfluencer.Name</span>
+                                                <span class="influencer-handle">@_event.TwitterAnalytics.TopInfluencer.Handle</span>
                                             </div>
-                                            <span class="dsc-value">@_event.TwitterAnalytics.EstimatedROI.ToString("C0")</span>
-                                        </div>
-                                        <div class="detail-stat-card">
-                                            <div class="dsc-header">
-                                                <img src="https://api.iconify.design/ic:outline-people.svg" class="dsc-icon" alt="" />
-                                                <span class="dsc-label">Reach Unique</span>
-                                            </div>
-                                            <span class="dsc-value">@FormatNumber(_event.TwitterAnalytics.UniqueReach)</span>
-                                        </div>
-                                        <div class="detail-stat-card">
-                                            <div class="dsc-header">
-                                                <img src="https://api.iconify.design/ic:outline-account-balance.svg" class="dsc-icon"
-                                                     alt="" />
-                                                <span class="dsc-label">CPM</span>
-                                            </div>
-                                            <span class="dsc-value">@_event.TwitterAnalytics.CPM.ToString("C2")</span>
-                                        </div>
-                                    </div>
-
-                                    @* Top Influenceur *@
-                                    <div class="section mt-6">
-                                        <h3 class="section-title">Top Influenceur</h3>
-                                        <div class="influencer-card">
-
-                                            @if (_event.TwitterAnalytics.TopInfluencer != null &&
-                                !string.IsNullOrEmpty(_event.TwitterAnalytics.TopInfluencer.Handle))
-                                            {
-                                                <div class="influencer-header">
-                                                    <img src="https://api.iconify.design/ic:outline-star.svg" class="influencer-icon"
-                                                         alt="" />
-                                                    <span class="influencer-name">@_event.TwitterAnalytics.TopInfluencer.Name</span>
-                                                    <span class="influencer-handle">@_event.TwitterAnalytics.TopInfluencer.Handle</span>
-                                                </div>
-                                                <div class="influencer-metrics">
+                                            <div class="influencer-metrics">
+                                                <div class="influencer-metric">
+                                                    <img src="https://api.iconify.design/ic:outline-people.svg"
+                                                         class="metric-icon-small" alt="" />
+                                                    <span>@_event.TwitterAnalytics.TopInfluencer.FollowersCount.ToString("N0")
+                                                        followers</span>
+                                                    </div>
                                                     <div class="influencer-metric">
-                                                        <img src="https://api.iconify.design/ic:outline-people.svg"
+                                                        <img src="https://api.iconify.design/ic:outline-percent.svg"
                                                              class="metric-icon-small" alt="" />
-                                                        <span>@_event.TwitterAnalytics.TopInfluencer.FollowersCount.ToString("N0")
-                                                            followers</span>
+                                                        <span>@(_event.TwitterAnalytics.TopInfluencer.AvgEngagementRate *
+                                                                                                                                                                                                                                                                                                    100).ToString("F1")% engagement</span>
                                                         </div>
                                                         <div class="influencer-metric">
-                                                            <img src="https://api.iconify.design/ic:outline-percent.svg"
+                                                            <img src="https://api.iconify.design/ic:outline-chat.svg" class="metric-icon-small"
+                                                                 alt="" />
+                                                            <span>@_event.TwitterAnalytics.TopInfluencer.TweetCount tweets</span>
+                                                        </div>
+                                                        <div class="influencer-metric">
+                                                            <img src="https://api.iconify.design/ic:outline-remove-red-eye.svg"
                                                                  class="metric-icon-small" alt="" />
-                                                            <span>@(_event.TwitterAnalytics.TopInfluencer.AvgEngagementRate *
-                                                                                                                                                                                                                                        100).ToString("F1")% engagement</span>
+                                                            <span>@FormatNumber(_event.TwitterAnalytics.TopInfluencer.EstimatedReach)
+                                                                reach</span>
                                                             </div>
-                                                            <div class="influencer-metric">
-                                                                <img src="https://api.iconify.design/ic:outline-chat.svg" class="metric-icon-small"
-                                                                     alt="" />
-                                                                <span>@_event.TwitterAnalytics.TopInfluencer.TweetCount tweets</span>
-                                                            </div>
-                                                            <div class="influencer-metric">
-                                                                <img src="https://api.iconify.design/ic:outline-remove-red-eye.svg"
-                                                                     class="metric-icon-small" alt="" />
-                                                                <span>@FormatNumber(_event.TwitterAnalytics.TopInfluencer.EstimatedReach)
-                                                                    reach</span>
-                                                                </div>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+
+                                            @* Top Hashtags *@
+                                            @if (_event.TwitterAnalytics.TopHashtags?.Any() == true)
+                                            {
+                                                <div class="section mt-6">
+                                                    <h3 class="section-title">Top Hashtags</h3>
+                                                    <div class="hashtags-list">
+                                                        @foreach (var hashtag in _event.TwitterAnalytics.TopHashtags.Take(5))
+                                                        {
+                                                            <div class="hashtag-item">
+                                                                <span class="hashtag-tag">#@hashtag.Tag</span>
+                                                                <span class="hashtag-count">@hashtag.UsageCount</span>
+                                                                <span class="hashtag-engagement">@hashtag.TotalEngagements engagements</span>
                                                             </div>
                                                         }
                                                     </div>
                                                 </div>
+                                            }
 
-                                                @* Top Hashtags *@
-                                                @if (_event.TwitterAnalytics.TopHashtags?.Any() == true)
-                                                {
-                                                    <div class="section mt-6">
-                                                        <h3 class="section-title">Top Hashtags</h3>
-                                                        <div class="hashtags-list">
-                                                            @foreach (var hashtag in _event.TwitterAnalytics.TopHashtags.Take(5))
-                                                            {
-                                                                <div class="hashtag-item">
-                                                                    <span class="hashtag-tag">#@hashtag.Tag</span>
-                                                                    <span class="hashtag-count">@hashtag.UsageCount</span>
-                                                                    <span class="hashtag-engagement">@hashtag.TotalEngagements engagements</span>
+                                            @* Répartition Géographique *@
+                                            @if (_event.TwitterAnalytics.GeographicReach?.Any() == true)
+                                            {
+                                                <div class="section mt-6">
+                                                    <h3 class="section-title">Répartition Géographique</h3>
+                                                    <div class="geo-list">
+                                                        @foreach (var geo in _event.TwitterAnalytics.GeographicReach.Take(5))
+                                                        {
+                                                            <div class="geo-item">
+                                                                <div class="geo-header">
+                                                                    <img src="https://flagcdn.com/w40/@(GetFlagCode(geo.Country)).png" class="flag-icon"
+                                                                         alt="@geo.Country" />
+                                                                    <span class="geo-country">@geo.Country</span>
+                                                                    <span class="geo-percentage">@geo.Percentage.ToString("F1")%</span>
                                                                 </div>
-                                                            }
-                                                        </div>
-                                                    </div>
-                                                }
-
-                                                @* Répartition Géographique *@
-                                                @if (_event.TwitterAnalytics.GeographicReach?.Any() == true)
-                                                {
-                                                    <div class="section mt-6">
-                                                        <h3 class="section-title">Répartition Géographique</h3>
-                                                        <div class="geo-list">
-                                                            @foreach (var geo in _event.TwitterAnalytics.GeographicReach.Take(5))
-                                                            {
-                                                                <div class="geo-item">
-                                                                    <div class="geo-header">
-                                                                        <img src="https://flagcdn.com/w40/@(GetFlagCode(geo.Country)).png" class="flag-icon"
-                                                                             alt="@geo.Country" />
-                                                                        <span class="geo-country">@geo.Country</span>
-                                                                        <span class="geo-percentage">@geo.Percentage.ToString("F1")%</span>
-                                                                    </div>
-                                                                    <div class="geo-bar">
-                                                                        <div class="geo-bar-fill" style="width: @geo.Percentage%"></div>
-                                                                    </div>
-                                                                    <span class="geo-impressions">@geo.Impressions.ToString("N0") impressions</span>
+                                                                <div class="geo-bar">
+                                                                    <div class="geo-bar-fill" style="width: @geo.Percentage%"></div>
                                                                 </div>
-                                                            }
-                                                        </div>
+                                                                <span class="geo-impressions">@geo.Impressions.ToString("N0") impressions</span>
+                                                            </div>
+                                                        }
                                                     </div>
-                                                }
-
-                                                @if (_event.TwitterAnalytics.TopTweets?.Any() == true)
-                                                {
-                                                    <div class="top-tweets-section mt-6">
-                                                        <h4 class="tweets-title">Top Tweets</h4>
-                                                        <div class="tweets-list">
-                                                            @foreach (var tweet in _event.TwitterAnalytics.TopTweets.Take(3))
-                                                            {
-                                                                <div class="tweet-card">
-                                                                    <div class="tweet-header">
-                                                                        <span class="tweet-author">@tweet.AuthorName</span>
-                                                                        <span class="tweet-handle">@tweet.AuthorHandle</span>
-                                                                        <span class="tweet-followers">(@tweet.AuthorFollowersCount.ToString("N0")
-                                                                            followers)</span>
-                                                                        </div>
-                                                                        <p class="tweet-text">@tweet.Text</p>
-                                                                        <div class="tweet-metrics">
-                                                                            <span class="tweet-metric-item">
-                                                                                <img src="https://api.iconify.design/ic:outline-favorite.svg" class="tweet-icon"
-                                                                                     alt="" />
-                                                                                @tweet.Likes.ToString("N0")
-                                                                            </span>
-                                                                            <span class="tweet-metric-item">
-                                                                                <img src="https://api.iconify.design/ic:outline-repeat.svg" class="tweet-icon"
-                                                                                     alt="" />
-                                                                                @tweet.Retweets.ToString("N0")
-                                                                            </span>
-                                                                            <span class="tweet-metric-item">
-                                                                                <img src="https://api.iconify.design/ic:outline-chat-bubble-outline.svg"
-                                                                                     class="tweet-icon" alt="" />
-                                                                                @tweet.Replies.ToString("N0")
-                                                                            </span>
-                                                                        </div>
-                                                                    </div>
-                                                                }
-                                                            </div>
-                                                        </div>
-                                                    }
-
-                                                    @if (_event.TwitterAnalytics.SentimentRatio?.Any() == true)
-                                                    {
-                                                        <div class="sentiment-section mt-6">
-                                                            <h4 class="tweets-title">Sentiment</h4>
-                                                            <div class="sentiment-stacked-bar">
-                                                                @foreach (var sentiment in _event.TwitterAnalytics.SentimentRatio)
-                                                                {
-                                                                    <div class="sentiment-segment @GetSentimentSegmentClass(sentiment.Key)"
-                                                                         style="width: @sentiment.Value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)%"
-                                                                         title="@sentiment.Key : @sentiment.Value.ToString("F1")%"></div>
-                                                                }
-                                                            </div>
-                                                            <div class="sentiment-cards">
-                                                                @foreach (var sentiment in _event.TwitterAnalytics.SentimentRatio)
-                                                                {
-                                                                    <div class="sentiment-card @GetSentimentCardClass(sentiment.Key)">
-                                                                        <img src="@GetSentimentIcon(sentiment.Key)" class="sentiment-icon" alt="" />
-                                                                        <span
-                                                                        class="sentiment-pct @GetSentimentValueClass(sentiment.Key)">@sentiment.Value.ToString("F1")%</span>
-                                                                        <span class="sentiment-card-label">@sentiment.Key</span>
-                                                                    </div>
-                                                                }
-                                                            </div>
-                                                        </div>
-                                                    }
                                                 </div>
                                             }
-                                            else
+
+                                            @if (_event.TwitterAnalytics.TopTweets?.Any() == true)
                                             {
-                                                <TwitterFetcher EventToUpdate="@_event" OnDataUpdated="HandleDataUpdated" />
-                                            }
-                                        </div>
+                                                <div class="top-tweets-section mt-6">
+                                                    <h4 class="tweets-title">Top Tweets</h4>
+                                                    <div class="tweets-list">
+                                                        @foreach (var tweet in _event.TwitterAnalytics.TopTweets.Take(3))
+                                                        {
+                                                            <div class="tweet-card">
+                                                                <div class="tweet-header">
+                                                                    <span class="tweet-author">@tweet.AuthorName</span>
+                                                                    <span class="tweet-handle">@tweet.AuthorHandle</span>
+                                                                    <span class="tweet-followers">(@tweet.AuthorFollowersCount.ToString("N0")
+                                                                        followers)</span>
+                                                                    </div>
+                                                                    <p class="tweet-text">@tweet.Text</p>
+                                                                    <div class="tweet-metrics">
+                                                                        <span class="tweet-metric-item">
+                                                                            <img src="https://api.iconify.design/ic:outline-favorite.svg" class="tweet-icon"
+                                                                                 alt="" />
+                                                                            @tweet.Likes.ToString("N0")
+                                                                        </span>
+                                                                        <span class="tweet-metric-item">
+                                                                            <img src="https://api.iconify.design/ic:outline-repeat.svg" class="tweet-icon"
+                                                                                 alt="" />
+                                                                            @tweet.Retweets.ToString("N0")
+                                                                        </span>
+                                                                        <span class="tweet-metric-item">
+                                                                            <img src="https://api.iconify.design/ic:outline-chat-bubble-outline.svg"
+                                                                                 class="tweet-icon" alt="" />
+                                                                            @tweet.Replies.ToString("N0")
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                }
+
+                                                @if (_event.TwitterAnalytics.SentimentRatio?.Any() == true)
+                                                {
+                                                    <div class="sentiment-section mt-6">
+                                                        <h4 class="tweets-title">Sentiment</h4>
+                                                        <div class="sentiment-stacked-bar">
+                                                            @foreach (var sentiment in _event.TwitterAnalytics.SentimentRatio)
+                                                            {
+                                                                <div class="sentiment-segment @GetSentimentSegmentClass(sentiment.Key)"
+                                                                     style="width: @sentiment.Value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)%"
+                                                                     title="@sentiment.Key : @sentiment.Value.ToString("F1")%"></div>
+                                                            }
+                                                        </div>
+                                                        <div class="sentiment-cards">
+                                                            @foreach (var sentiment in _event.TwitterAnalytics.SentimentRatio)
+                                                            {
+                                                                <div class="sentiment-card @GetSentimentCardClass(sentiment.Key)">
+                                                                    <img src="@GetSentimentIcon(sentiment.Key)" class="sentiment-icon" alt="" />
+                                                                    <span
+                                                                    class="sentiment-pct @GetSentimentValueClass(sentiment.Key)">@sentiment.Value.ToString("F1")%</span>
+                                                                    <span class="sentiment-card-label">@sentiment.Key</span>
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <TwitterFetcher EventToUpdate="@_event" OnDataUpdated="HandleDataUpdated" />
+                                        }
+                                    </div>
+                                }
+
+                                <div class="section mb-6 mt-8" id="media-section">
+                                    <h3 class="section-title">Médias Événement (Photos)</h3>
+                                    <div class="media-container mb-4">
+                                        @if (_event.Media.Any())
+                                        {
+                                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                                                @foreach (var media in _event.Media)
+                                                {
+                                                    <div class="media-card group relative">
+                                                        <img src="@media.Url" alt="@media.OriginalFileName"
+                                                             class="w-full h-32 object-cover rounded-lg border border-white/10"
+                                                             @onclick="() => OpenLightbox(media.Url)" />
+
+                                                        <button
+                                                            class="btn-delete-media absolute top-2 right-2 bg-red-500/80 hover:bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                                            @onclick="() => DeleteMedia(media)" @onclick:stopPropagation>
+                                                            <span class="icon-small">🗑️</span>
+                                                        </button>
+                                                        <span class="text-xs text-gray-400 mt-1 block truncate">@media.OriginalFileName</span>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+
+                                    @if (_event.Media.Count < 5)
+                                    {
+                                        <MediaUploader EventSlug="@_event.Slug" OnUploadCompleted="HandleMediaUploaded" />
                                     }
-
-                                    <div class="section mb-6 mt-8" id="media-section">
-                                        <h3 class="section-title">Médias Événement (Photos)</h3>
-                                        <div class="media-container mb-4">
-                                            @if (_event.Media.Any())
-                                            {
-                                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                                                    @foreach (var media in _event.Media)
-                                                    {
-                                                        <div class="media-card group relative">
-                                                            <img src="@media.Url" alt="@media.OriginalFileName"
-                                                                 class="w-full h-32 object-cover rounded-lg border border-white/10"
-                                                                 @onclick="() => OpenLightbox(media.Url)" />
-
-                                                            <button
-                                                                class="btn-delete-media absolute top-2 right-2 bg-red-500/80 hover:bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                @onclick="() => DeleteMedia(media)" @onclick:stopPropagation>
-                                                                <span class="icon-small">🗑️</span>
-                                                            </button>
-                                                            <span class="text-xs text-gray-400 mt-1 block truncate">@media.OriginalFileName</span>
-                                                        </div>
-                                                    }
-                                                </div>
-                                            }
-                                            else if (DemoDataService.IsInDemoMode)
-                                            {
-                                                <p class="text-gray-400 text-sm">Aucun média en mode démo.</p>
-                                            }
-                                        </div>
-
-                                        @if (!DemoDataService.IsInDemoMode && _event.Media.Count < 5)
-                                        {
-                                            <MediaUploader EventSlug="@_event.Slug" OnUploadCompleted="HandleMediaUploaded" />
-                                        }
-                                        else if (_event.Media.Count >= 5)
-                                        {
-                                            <p class="text-yellow-500 text-sm">Limite de 5 photos atteinte.</p>
-                                        }
-                                    </div>
-
-                                    <div class="section mt-8 pt-6 border-t border-gray-800">
-                                        <button class="btn-generate" @onclick="OpenPdfCustomize">
-                                            <img src="https://api.iconify.design/ic:outline-picture-as-pdf.svg" class="btn-generate-icon"
-                                                 alt="" />
-                                            Générer Rapport
-                                        </button>
-                                    </div>
+                                    else if (_event.Media.Count >= 5)
+                                    {
+                                        <p class="text-yellow-500 text-sm">Limite de 5 photos atteinte.</p>
+                                    }
                                 </div>
-                            }
+
+                                <div class="section mt-8 pt-6 border-t border-gray-800">
+                                    <button class="btn-generate" @onclick="OpenPdfCustomize">
+                                        <img src="https://api.iconify.design/ic:outline-picture-as-pdf.svg" class="btn-generate-icon"
+                                             alt="" />
+                                        Générer Rapport
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @if (_lightboxUrl != null)
+                {
+                    <div class="fixed inset-0 z-[2000] bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm"
+                         @onclick="CloseLightbox">
+                        <div class="relative max-w-7xl max-h-screen">
+                            <button class="absolute -top-12 right-0 text-white hover:text-gray-300 text-3xl"
+                                    @onclick="CloseLightbox">✕</button>
+                            <img src="@_lightboxUrl" class="max-h-[85vh] max-w-full rounded-lg shadow-2xl" @onclick:stopPropagation />
                         </div>
                     </div>
+                }
 
-                    @if (_lightboxUrl != null)
-                    {
-                        <div class="fixed inset-0 z-[2000] bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm"
-                             @onclick="CloseLightbox">
-                            <div class="relative max-w-7xl max-h-screen">
-                                <button class="absolute -top-12 right-0 text-white hover:text-gray-300 text-3xl"
-                                        @onclick="CloseLightbox">✕</button>
-                                <img src="@_lightboxUrl" class="max-h-[85vh] max-w-full rounded-lg shadow-2xl" @onclick:stopPropagation />
-                            </div>
-                        </div>
+                <style>
+                    .modal-page-backdrop {
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        width: 100vw;
+                        height: 100vh;
+                        background: rgba(5, 10, 20, 0.85);
+                        /* Dark overlay */
+                        backdrop-filter: blur(8px);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        z-index: 1000;
+                        padding: 1rem;
                     }
 
-                    <style>
-                        .modal-page-backdrop {
-                            position: fixed;
-                            top: 0;
-                            left: 0;
-                            width: 100vw;
-                            height: 100vh;
-                            background: rgba(5, 10, 20, 0.85);
-                            /* Dark overlay */
-                            backdrop-filter: blur(8px);
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            z-index: 1000;
-                            padding: 1rem;
+                    .modal-page-content {
+                        width: 100%;
+                        max-width: 800px;
+                        max-height: 90vh;
+                        overflow-y: auto;
+                        padding: 2.5rem;
+                        border-radius: 24px;
+                        background: linear-gradient(145deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                    }
+
+                    .header {
+                        display: flex;
+                        justify-content: space-between;
+                        margin-bottom: 2rem;
+                    }
+
+                    .back-btn {
+                        background: transparent;
+                        border: none;
+                        color: var(--lavender);
+                        cursor: pointer;
+                        font-weight: 600;
+                        display: flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                        padding: 0.4rem 0.75rem;
+                        font-size: 0.9rem;
+                        opacity: 0.8;
+                        transition: opacity 0.2s, transform 0.2s, background 0.2s;
+                        border-radius: var(--radius-btn);
+                    }
+
+                    .back-btn:hover {
+                        opacity: 1;
+                        transform: translateX(-3px);
+                        background: rgba(204, 201, 220, 0.08);
+                    }
+
+                    .section-title {
+                        color: var(--grey-text);
+                        text-transform: uppercase;
+                        letter-spacing: 0.08em;
+                        font-size: 0.7rem;
+                        margin-bottom: 1rem;
+                        font-weight: 700;
+                        display: flex;
+                        align-items: center;
+                        gap: 0.6rem;
+                    }
+
+                    .section-title::before {
+                        content: '';
+                        display: inline-block;
+                        width: 3px;
+                        height: 13px;
+                        background: var(--lavender);
+                        border-radius: 2px;
+                        opacity: 0.45;
+                        flex-shrink: 0;
+                    }
+
+                    .badge {
+                        background: rgba(59, 130, 246, 0.2);
+                        color: #60A5FA;
+                        border: 1px solid rgba(59, 130, 246, 0.4);
+                        padding: 0.25rem 0.75rem;
+                        border-radius: 99px;
+                        font-size: 0.85rem;
+                        font-weight: 600;
+                    }
+
+                    .date {
+                        color: var(--grey-text);
+                        margin-left: 1rem;
+                    }
+
+                    .code-block {
+                        background: rgba(0, 0, 0, 0.3);
+                        padding: 0.75rem 1rem;
+                        border-radius: 8px;
+                        font-family: monospace;
+                        color: var(--lavender);
+                        border: 1px solid rgba(255, 255, 255, 0.05);
+                        display: inline-block;
+                    }
+
+                    .btn-action {
+                        background: linear-gradient(135deg, var(--accent-blue) 0%, #2563EB 100%);
+                        color: white;
+                        border: none;
+                        padding: 0.75rem 1.5rem;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: transform 0.2s, box-shadow 0.2s;
+                    }
+
+                    .btn-action:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
+                    }
+
+                    /* Media Grid Styles */
+                    .media-card {
+                        transition: transform 0.2s;
+                    }
+
+                    .media-card:hover {
+                        transform: scale(1.02);
+                    }
+
+                    .icon-small {
+                        font-size: 0.8rem;
+                    }
+
+                    .fade-in-up {
+                        animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+                    }
+
+                    @@keyframes fadeInUp {
+                        from {
+                            opacity: 0;
+                            transform: translateY(20px) scale(0.98);
                         }
 
-                        .modal-page-content {
-                            width: 100%;
-                            max-width: 800px;
-                            max-height: 90vh;
-                            overflow-y: auto;
-                            padding: 2.5rem;
-                            border-radius: 24px;
-                            background: linear-gradient(145deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
-                            border: 1px solid rgba(255, 255, 255, 0.1);
-                            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-                        }
-
-                        .header {
-                            display: flex;
-                            justify-content: space-between;
-                            margin-bottom: 2rem;
-                        }
-
-                        .back-btn {
-                            background: transparent;
-                            border: none;
-                            color: var(--lavender);
-                            cursor: pointer;
-                            font-weight: 600;
-                            display: flex;
-                            align-items: center;
-                            gap: 0.5rem;
-                            padding: 0.4rem 0.75rem;
-                            font-size: 0.9rem;
-                            opacity: 0.8;
-                            transition: opacity 0.2s, transform 0.2s, background 0.2s;
-                            border-radius: var(--radius-btn);
-                        }
-
-                        .back-btn:hover {
+                        to {
                             opacity: 1;
-                            transform: translateX(-3px);
-                            background: rgba(204, 201, 220, 0.08);
-                        }
-
-                        .section-title {
-                            color: var(--grey-text);
-                            text-transform: uppercase;
-                            letter-spacing: 0.08em;
-                            font-size: 0.7rem;
-                            margin-bottom: 1rem;
-                            font-weight: 700;
-                            display: flex;
-                            align-items: center;
-                            gap: 0.6rem;
-                        }
-
-                        .section-title::before {
-                            content: '';
-                            display: inline-block;
-                            width: 3px;
-                            height: 13px;
-                            background: var(--lavender);
-                            border-radius: 2px;
-                            opacity: 0.45;
-                            flex-shrink: 0;
-                        }
-
-                        .badge {
-                            background: rgba(59, 130, 246, 0.2);
-                            color: #60A5FA;
-                            border: 1px solid rgba(59, 130, 246, 0.4);
-                            padding: 0.25rem 0.75rem;
-                            border-radius: 99px;
-                            font-size: 0.85rem;
-                            font-weight: 600;
-                        }
-
-                        .date {
-                            color: var(--grey-text);
-                            margin-left: 1rem;
-                        }
-
-                        .code-block {
-                            background: rgba(0, 0, 0, 0.3);
-                            padding: 0.75rem 1rem;
-                            border-radius: 8px;
-                            font-family: monospace;
-                            color: var(--lavender);
-                            border: 1px solid rgba(255, 255, 255, 0.05);
-                            display: inline-block;
-                        }
-
-                        .btn-action {
-                            background: linear-gradient(135deg, var(--accent-blue) 0%, #2563EB 100%);
-                            color: white;
-                            border: none;
-                            padding: 0.75rem 1.5rem;
-                            border-radius: 8px;
-                            font-weight: 600;
-                            cursor: pointer;
-                            transition: transform 0.2s, box-shadow 0.2s;
-                        }
-
-                        .btn-action:hover {
-                            transform: translateY(-2px);
-                            box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
-                        }
-
-                        /* Media Grid Styles */
-                        .media-card {
-                            transition: transform 0.2s;
-                        }
-
-                        .media-card:hover {
-                            transform: scale(1.02);
-                        }
-
-                        .icon-small {
-                            font-size: 0.8rem;
-                        }
-
-                        .fade-in-up {
-                            animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-                        }
-
-                        @@keyframes fadeInUp {
-                            from {
-                                opacity: 0;
-                                transform: translateY(20px) scale(0.98);
-                            }
-
-                            to {
-                                opacity: 1;
-                                transform: translateY(0) scale(1);
-                            }
-                        }
-
-                        /* Detail Stat Cards */
-                        .detail-stats-row {
-                            display: grid;
-                            grid-template-columns: repeat(3, 1fr);
-                            gap: 0.875rem;
-                        }
-
-                        .detail-stat-card {
-                            background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%);
-                            border: 1px solid rgba(148, 163, 184, 0.12);
-                            border-radius: 12px;
-                            padding: 1rem 1.125rem;
-                            display: flex;
-                            flex-direction: column;
-                            gap: 0.5rem;
-                            transition: border-color 0.2s, transform 0.2s;
-                        }
-
-                        .detail-stat-card:hover {
-                            border-color: rgba(204, 201, 220, 0.22);
-                            transform: translateY(-2px);
-                        }
-
-                        .dsc-header {
-                            display: flex;
-                            align-items: center;
-                            gap: 0.45rem;
-                        }
-
-                        .dsc-icon {
-                            width: 14px;
-                            height: 14px;
-                            filter: brightness(0) saturate(100%) invert(65%) sepia(10%) saturate(200%) hue-rotate(194deg) brightness(90%) contrast(90%);
-                            flex-shrink: 0;
-                        }
-
-                        .dsc-label {
-                            font-size: 0.67rem;
-                            color: var(--grey-text);
-                            text-transform: uppercase;
-                            letter-spacing: 0.07em;
-                            font-weight: 600;
-                        }
-
-                        .dsc-value {
-                            font-size: 1.6rem;
-                            font-weight: 700;
-                            background: linear-gradient(135deg, var(--white) 0%, var(--lavender) 100%);
-                            -webkit-background-clip: text;
-                            -webkit-text-fill-color: transparent;
-                            background-clip: text;
-                            line-height: 1.2;
-                            padding: 0.1rem 0;
-                        }
-
-                        /* Inline labeled field (non-numeric values like Jeu) */
-                        .info-field {
-                            display: flex;
-                            align-items: center;
-                            gap: 1rem;
-                            margin-top: 0.75rem;
-                            padding: 0.6rem 0.875rem;
-                            background: rgba(255, 255, 255, 0.02);
-                            border-radius: 8px;
-                            border: 1px solid rgba(148, 163, 184, 0.07);
-                        }
-
-                        .info-field-label {
-                            font-size: 0.67rem;
-                            color: var(--grey-text);
-                            text-transform: uppercase;
-                            letter-spacing: 0.07em;
-                            font-weight: 600;
-                            white-space: nowrap;
-                            min-width: 2rem;
-                        }
-
-                        .info-field-value {
-                            font-size: 1rem;
-                            font-weight: 600;
-                            color: var(--white);
-                        }
-
-                        /* Hero metric banner (most commercially important stat) */
-                        .hero-metric {
-                            display: flex;
-                            align-items: center;
-                            justify-content: space-between;
-                            padding: 1.125rem 1.375rem;
-                            margin-bottom: 0.875rem;
-                            background: linear-gradient(135deg, rgba(204, 201, 220, 0.07) 0%, rgba(204, 201, 220, 0.02) 100%);
-                            border: 1px solid rgba(204, 201, 220, 0.18);
-                            border-radius: 12px;
-                        }
-
-                        .hero-metric-label {
-                            display: flex;
-                            align-items: center;
-                            gap: 0.5rem;
-                            font-size: 0.7rem;
-                            color: var(--grey-text);
-                            text-transform: uppercase;
-                            letter-spacing: 0.08em;
-                            font-weight: 700;
-                        }
-
-                        .hero-icon {
-                            width: 16px;
-                            height: 16px;
-                            filter: brightness(0) saturate(100%) invert(85%) sepia(6%) saturate(19%) hue-rotate(194deg) brightness(94%) contrast(93%);
-                        }
-
-                        .hero-metric-value {
-                            font-size: 2rem;
-                            font-weight: 700;
-                            background: linear-gradient(135deg, var(--white) 0%, var(--lavender) 100%);
-                            -webkit-background-clip: text;
-                            -webkit-text-fill-color: transparent;
-                            background-clip: text;
-                            line-height: 1;
-                        }
-
-                        .top-tweets-section,
-                        .sentiment-section {
-                            border-top: 1px solid rgba(148, 163, 184, 0.2);
-                            padding-top: 1.5rem;
-                        }
-
-                        .tweets-title {
-                            font-size: 0.9rem;
-                            color: var(--grey-text);
-                            text-transform: uppercase;
-                            letter-spacing: 0.05em;
-                            margin-bottom: 1rem;
-                        }
-
-                        .tweets-list {
-                            display: flex;
-                            flex-direction: column;
-                            gap: 1rem;
-                        }
-
-                        .tweet-card {
-                            background: rgba(255, 255, 255, 0.02);
-                            padding: 1rem 1.25rem;
-                            border-radius: 12px;
-                            border: 1px solid rgba(148, 163, 184, 0.08);
-                            transition: background 0.2s, border-color 0.2s;
-                        }
-
-                        .tweet-card:hover {
-                            background: rgba(255, 255, 255, 0.04);
-                            border-color: rgba(148, 163, 184, 0.15);
-                        }
-
-                        .tweet-header {
-                            display: flex;
-                            gap: 0.5rem;
-                            align-items: baseline;
-                            margin-bottom: 0.75rem;
-                        }
-
-                        .tweet-author {
-                            font-weight: 600;
-                            color: var(--white);
-                        }
-
-                        .tweet-handle {
-                            color: var(--grey-text);
-                            font-size: 0.9rem;
-                        }
-
-                        .tweet-followers {
-                            color: var(--grey-text);
-                            font-size: 0.85rem;
-                            opacity: 0.7;
-                        }
-
-                        .tweet-text {
-                            color: var(--white);
-                            margin-bottom: 0.75rem;
-                            line-height: 1.5;
-                        }
-
-                        .tweet-metrics {
-                            display: flex;
-                            gap: 1rem;
-                            font-size: 0.85rem;
-                            color: var(--grey-text);
-                        }
-
-                        .tweet-metric-item {
-                            display: flex;
-                            align-items: center;
-                            gap: 0.375rem;
-                            color: var(--grey-text);
-                            white-space: nowrap;
-                        }
-
-                        .tweet-icon {
-                            width: 14px;
-                            height: 14px;
-                            filter: brightness(0) saturate(100%) invert(65%) sepia(10%) saturate(200%) hue-rotate(194deg) brightness(90%) contrast(90%);
-                        }
-
-                        /* Creative Sentiment Layout */
-                        .sentiment-stacked-bar {
-                            display: flex;
-                            height: 10px;
-                            border-radius: 99px;
-                            overflow: hidden;
-                            margin-bottom: 1rem;
-                            gap: 2px;
-                        }
-
-                        .sentiment-segment {
-                            height: 100%;
-                            border-radius: 99px;
-                            transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-                        }
-
-                        .segment-positive {
-                            background: linear-gradient(90deg, #16A34A, #4ADE80);
-                        }
-
-                        .segment-neutral {
-                            background: linear-gradient(90deg, #475569, #94A3B8);
-                        }
-
-                        .segment-negative {
-                            background: linear-gradient(90deg, #DC2626, #F87171);
-                        }
-
-                        .sentiment-cards {
-                            display: grid;
-                            grid-template-columns: repeat(3, 1fr);
-                            gap: 0.75rem;
-                        }
-
-                        .sentiment-card {
-                            display: flex;
-                            flex-direction: column;
-                            align-items: center;
-                            gap: 0.3rem;
-                            padding: 1rem 0.75rem;
-                            border-radius: 12px;
-                            border: 1px solid;
-                            text-align: center;
-                            transition: transform 0.2s, box-shadow 0.2s;
-                        }
-
-                        .sentiment-card:hover {
-                            transform: translateY(-3px);
-                        }
-
-                        .card-positive {
-                            background: rgba(34, 197, 94, 0.06);
-                            border-color: rgba(34, 197, 94, 0.2);
-                            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.06);
-                        }
-
-                        .card-positive:hover {
-                            box-shadow: 0 8px 20px rgba(34, 197, 94, 0.12);
-                        }
-
-                        .card-neutral {
-                            background: rgba(148, 163, 184, 0.06);
-                            border-color: rgba(148, 163, 184, 0.15);
-                        }
-
-                        .card-negative {
-                            background: rgba(239, 68, 68, 0.06);
-                            border-color: rgba(239, 68, 68, 0.2);
-                            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.04);
-                        }
-
-                        .card-negative:hover {
-                            box-shadow: 0 8px 20px rgba(239, 68, 68, 0.1);
-                        }
-
-                        .sentiment-icon {
-                            width: 28px;
-                            height: 28px;
-                            margin-bottom: 0.25rem;
-                        }
-
-                        .card-positive .sentiment-icon {
-                            filter: brightness(0) saturate(100%) invert(60%) sepia(35%) saturate(1200%) hue-rotate(95deg) brightness(95%) contrast(90%);
-                        }
-
-                        .card-neutral .sentiment-icon {
-                            filter: brightness(0) saturate(100%) invert(65%) sepia(10%) saturate(200%) hue-rotate(194deg) brightness(90%) contrast(90%);
-                        }
-
-                        .card-negative .sentiment-icon {
-                            filter: brightness(0) saturate(100%) invert(44%) sepia(21%) saturate(1100%) hue-rotate(317deg) brightness(93%) contrast(85%);
-                        }
-
-                        .sentiment-pct {
-                            font-size: 1.5rem;
-                            font-weight: 700;
-                            line-height: 1.1;
-                        }
-
-                        .value-positive {
-                            color: #4ADE80;
-                        }
-
-                        .value-neutral {
-                            color: var(--grey-text);
-                        }
-
-                        .value-negative {
-                            color: #F87171;
-                        }
-
-                        .sentiment-card-label {
-                            font-size: 0.65rem;
-                            color: var(--grey-text);
-                            text-transform: uppercase;
-                            letter-spacing: 0.08em;
-                            font-weight: 600;
-                        }
-
-                        /* ── Top Influenceur Card ── */
-                        .influencer-card {
-                            background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%);
-                            border: 1px solid rgba(148, 163, 184, 0.12);
-                            border-radius: 12px;
-                            padding: 1.25rem;
-                            transition: border-color 0.2s, transform 0.2s;
-                        }
-
-                        .influencer-card:hover {
-                            border-color: rgba(204, 201, 220, 0.22);
-                            transform: translateY(-2px);
-                        }
-
-                        .influencer-header {
-                            display: flex;
-                            align-items: center;
-                            gap: 0.5rem;
-                            margin-bottom: 1rem;
-                        }
-
-                        .influencer-icon {
-                            width: 18px;
-                            height: 18px;
-                            filter: brightness(0) saturate(100%) invert(84%) sepia(27%) saturate(744%) hue-rotate(356deg) brightness(103%) contrast(95%);
-                        }
-
-                        .influencer-name {
-                            font-weight: 700;
-                            color: var(--white);
-                            font-size: 1rem;
-                        }
-
-                        .influencer-handle {
-                            color: var(--grey-text);
-                            font-size: 0.85rem;
-                        }
-
-                        .influencer-metrics {
-                            display: grid;
-                            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-                            gap: 0.75rem;
-                        }
-
-                        .influencer-metric {
-                            display: flex;
-                            align-items: center;
-                            gap: 0.5rem;
-                            color: var(--grey-text);
-                            font-size: 0.85rem;
-                        }
-
-                        .metric-icon-small {
-                            width: 14px;
-                            height: 14px;
-                            filter: brightness(0) saturate(100%) invert(65%) sepia(10%) saturate(200%) hue-rotate(194deg) brightness(90%) contrast(90%);
-                        }
-
-                        /* ── Top Hashtags ── */
-                        .hashtags-list {
-                            display: flex;
-                            flex-wrap: wrap;
-                            gap: 0.75rem;
-                        }
-
-                        .hashtag-item {
-                            display: flex;
-                            align-items: center;
-                            gap: 0.75rem;
-                            background: rgba(255, 255, 255, 0.02);
-                            border: 1px solid rgba(148, 163, 184, 0.08);
-                            border-radius: 8px;
-                            padding: 0.625rem 0.875rem;
-                            transition: border-color 0.2s, background 0.2s;
-                        }
-
-                        .hashtag-item:hover {
-                            border-color: rgba(29, 155, 240, 0.3);
-                            background: rgba(29, 155, 240, 0.05);
-                        }
-
-                        .hashtag-tag {
-                            color: #1D9BF0;
-                            font-weight: 600;
-                            font-size: 0.9rem;
-                        }
-
-                        .hashtag-count {
-                            color: var(--white);
-                            font-weight: 500;
-                            font-size: 0.85rem;
-                        }
-
-                        .hashtag-engagement {
-                            color: var(--grey-text);
-                            font-size: 0.75rem;
-                        }
-
-                        /* ── Répartition Géographique ── */
-                        .geo-list {
-                            display: flex;
-                            flex-direction: column;
-                            gap: 0.875rem;
-                        }
-
-                        .geo-item {
-                            background: rgba(255, 255, 255, 0.02);
-                            border: 1px solid rgba(148, 163, 184, 0.08);
-                            border-radius: 10px;
-                            padding: 0.875rem 1rem;
-                            transition: border-color 0.2s;
-                        }
-
-                        .geo-item:hover {
-                            border-color: rgba(99, 102, 241, 0.3);
-                        }
-
-                        .geo-header {
-                            display: flex;
-                            align-items: center;
-                            gap: 0.625rem;
-                            margin-bottom: 0.5rem;
-                        }
-
-                        .flag-icon {
-                            width: 20px;
-                            height: 15px;
-                            border-radius: 2px;
-                            object-fit: cover;
-                        }
-
-                        .geo-country {
-                            flex: 1;
-                            color: var(--white);
-                            font-weight: 500;
-                            font-size: 0.9rem;
-                        }
-
-                        .geo-percentage {
-                            color: var(--lavender);
-                            font-weight: 700;
-                            font-size: 0.9rem;
-                        }
-
-                        .geo-bar {
-                            height: 6px;
-                            background: rgba(148, 163, 184, 0.1);
-                            border-radius: 99px;
-                            overflow: hidden;
-                            margin-bottom: 0.375rem;
-                        }
-
-                        .geo-bar-fill {
-                            height: 100%;
-                            background: linear-gradient(90deg, #6366F1, #A78BFA);
-                            border-radius: 99px;
-                            transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-                        }
-
-                        .geo-impressions {
-                            color: var(--grey-text);
-                            font-size: 0.75rem;
-                        }
-
-                        /* ── Event Title ── */
-                        .event-title {
-                            font-size: 1.875rem;
-                            font-weight: 700;
-                            background: linear-gradient(135deg, var(--white) 0%, var(--lavender) 100%);
-                            -webkit-background-clip: text;
-                            -webkit-text-fill-color: transparent;
-                            background-clip: text;
-                            line-height: 1.2;
-                        }
-
-                        /* ── Meta Row ── */
-                        .meta-row {
-                            display: flex;
-                            align-items: center;
-                            gap: 0.75rem;
-                            flex-wrap: wrap;
-                        }
-
-                        .badge {
-                            display: inline-flex;
-                            align-items: center;
-                            gap: 0.375rem;
-                            padding: 0.3rem 0.75rem;
-                            border-radius: 99px;
-                            font-size: 0.8rem;
-                            font-weight: 600;
-                        }
-
-                        .badge-twitch {
-                            background: rgba(145, 70, 255, 0.15);
-                            color: #A970FF;
-                            border: 1px solid rgba(145, 70, 255, 0.3);
-                        }
-
-                        .badge-twitter,
-                        .badge-x {
-                            background: rgba(29, 155, 240, 0.15);
-                            color: #1D9BF0;
-                            border: 1px solid rgba(29, 155, 240, 0.3);
-                        }
-
-                        .badge-default {
-                            background: rgba(59, 130, 246, 0.15);
-                            color: #60A5FA;
-                            border: 1px solid rgba(59, 130, 246, 0.3);
-                        }
-
-                        .badge-platform-icon {
-                            width: 13px;
-                            height: 13px;
-                        }
-
-                        .badge-twitch .badge-platform-icon {
-                            filter: brightness(0) saturate(100%) invert(47%) sepia(80%) saturate(1500%) hue-rotate(250deg) brightness(110%) contrast(100%);
-                        }
-
-                        .badge-twitter .badge-platform-icon,
-                        .badge-x .badge-platform-icon {
-                            filter: brightness(0) saturate(100%) invert(52%) sepia(90%) saturate(500%) hue-rotate(185deg) brightness(100%) contrast(102%);
-                        }
-
-                        .meta-date {
-                            display: inline-flex;
-                            align-items: center;
-                            gap: 0.35rem;
-                            color: var(--grey-text);
-                            font-size: 0.9rem;
-                        }
-
-                        .meta-icon {
-                            width: 14px;
-                            height: 14px;
-                            filter: brightness(0) saturate(100%) invert(65%) sepia(10%) saturate(200%) hue-rotate(194deg) brightness(90%) contrast(90%);
-                            flex-shrink: 0;
-                        }
-
-                        .meta-slug {
-                            font-size: 0.75rem;
-                            color: var(--grey-text);
-                            opacity: 0.55;
-                            font-family: monospace;
-                            letter-spacing: 0.02em;
-                            background: rgba(255, 255, 255, 0.04);
-                            border: 1px solid rgba(148, 163, 184, 0.1);
-                            border-radius: 6px;
-                            padding: 0.2rem 0.5rem;
-                        }
-
-                        /* ── Generate Report Button ── */
-                        .btn-generate {
-                            display: inline-flex;
-                            align-items: center;
-                            gap: 0.5rem;
-                            background: linear-gradient(135deg, rgba(204, 201, 220, 0.12) 0%, rgba(204, 201, 220, 0.05) 100%);
-                            color: var(--lavender);
-                            border: 1px solid rgba(204, 201, 220, 0.25);
-                            padding: 0.75rem 1.5rem;
-                            border-radius: 10px;
-                            font-weight: 600;
-                            font-size: 0.9rem;
-                            cursor: pointer;
-                            transition: transform 0.2s, box-shadow 0.2s, background 0.2s, border-color 0.2s;
-                            backdrop-filter: blur(8px);
-                        }
-
-                        .btn-generate:hover {
-                            transform: translateY(-2px);
-                            background: linear-gradient(135deg, rgba(204, 201, 220, 0.2) 0%, rgba(204, 201, 220, 0.09) 100%);
-                            border-color: rgba(204, 201, 220, 0.45);
-                            box-shadow: 0 8px 24px -4px rgba(204, 201, 220, 0.15);
-                        }
-
-                        .btn-generate-icon {
-                            width: 18px;
-                            height: 18px;
-                            filter: brightness(0) saturate(100%) invert(85%) sepia(6%) saturate(19%) hue-rotate(194deg) brightness(94%) contrast(93%);
-                        }
-                    </style>
+                            transform: translateY(0) scale(1);
+                        }
+                    }
+
+                    /* Detail Stat Cards */
+                    .detail-stats-row {
+                        display: grid;
+                        grid-template-columns: repeat(3, 1fr);
+                        gap: 0.875rem;
+                    }
+
+                    .detail-stat-card {
+                        background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%);
+                        border: 1px solid rgba(148, 163, 184, 0.12);
+                        border-radius: 12px;
+                        padding: 1rem 1.125rem;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 0.5rem;
+                        transition: border-color 0.2s, transform 0.2s;
+                    }
+
+                    .detail-stat-card:hover {
+                        border-color: rgba(204, 201, 220, 0.22);
+                        transform: translateY(-2px);
+                    }
+
+                    .dsc-header {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.45rem;
+                    }
+
+                    .dsc-icon {
+                        width: 14px;
+                        height: 14px;
+                        filter: brightness(0) saturate(100%) invert(65%) sepia(10%) saturate(200%) hue-rotate(194deg) brightness(90%) contrast(90%);
+                        flex-shrink: 0;
+                    }
+
+                    .dsc-label {
+                        font-size: 0.67rem;
+                        color: var(--grey-text);
+                        text-transform: uppercase;
+                        letter-spacing: 0.07em;
+                        font-weight: 600;
+                    }
+
+                    .dsc-value {
+                        font-size: 1.6rem;
+                        font-weight: 700;
+                        background: linear-gradient(135deg, var(--white) 0%, var(--lavender) 100%);
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                        background-clip: text;
+                        line-height: 1.2;
+                        padding: 0.1rem 0;
+                    }
+
+                    /* Inline labeled field (non-numeric values like Jeu) */
+                    .info-field {
+                        display: flex;
+                        align-items: center;
+                        gap: 1rem;
+                        margin-top: 0.75rem;
+                        padding: 0.6rem 0.875rem;
+                        background: rgba(255, 255, 255, 0.02);
+                        border-radius: 8px;
+                        border: 1px solid rgba(148, 163, 184, 0.07);
+                    }
+
+                    .info-field-label {
+                        font-size: 0.67rem;
+                        color: var(--grey-text);
+                        text-transform: uppercase;
+                        letter-spacing: 0.07em;
+                        font-weight: 600;
+                        white-space: nowrap;
+                        min-width: 2rem;
+                    }
+
+                    .info-field-value {
+                        font-size: 1rem;
+                        font-weight: 600;
+                        color: var(--white);
+                    }
+
+                    /* Hero metric banner (most commercially important stat) */
+                    .hero-metric {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        padding: 1.125rem 1.375rem;
+                        margin-bottom: 0.875rem;
+                        background: linear-gradient(135deg, rgba(204, 201, 220, 0.07) 0%, rgba(204, 201, 220, 0.02) 100%);
+                        border: 1px solid rgba(204, 201, 220, 0.18);
+                        border-radius: 12px;
+                    }
+
+                    .hero-metric-label {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                        font-size: 0.7rem;
+                        color: var(--grey-text);
+                        text-transform: uppercase;
+                        letter-spacing: 0.08em;
+                        font-weight: 700;
+                    }
+
+                    .hero-icon {
+                        width: 16px;
+                        height: 16px;
+                        filter: brightness(0) saturate(100%) invert(85%) sepia(6%) saturate(19%) hue-rotate(194deg) brightness(94%) contrast(93%);
+                    }
+
+                    .hero-metric-value {
+                        font-size: 2rem;
+                        font-weight: 700;
+                        background: linear-gradient(135deg, var(--white) 0%, var(--lavender) 100%);
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                        background-clip: text;
+                        line-height: 1;
+                    }
+
+                    .top-tweets-section,
+                    .sentiment-section {
+                        border-top: 1px solid rgba(148, 163, 184, 0.2);
+                        padding-top: 1.5rem;
+                    }
+
+                    .tweets-title {
+                        font-size: 0.9rem;
+                        color: var(--grey-text);
+                        text-transform: uppercase;
+                        letter-spacing: 0.05em;
+                        margin-bottom: 1rem;
+                    }
+
+                    .tweets-list {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 1rem;
+                    }
+
+                    .tweet-card {
+                        background: rgba(255, 255, 255, 0.02);
+                        padding: 1rem 1.25rem;
+                        border-radius: 12px;
+                        border: 1px solid rgba(148, 163, 184, 0.08);
+                        transition: background 0.2s, border-color 0.2s;
+                    }
+
+                    .tweet-card:hover {
+                        background: rgba(255, 255, 255, 0.04);
+                        border-color: rgba(148, 163, 184, 0.15);
+                    }
+
+                    .tweet-header {
+                        display: flex;
+                        gap: 0.5rem;
+                        align-items: baseline;
+                        margin-bottom: 0.75rem;
+                    }
+
+                    .tweet-author {
+                        font-weight: 600;
+                        color: var(--white);
+                    }
+
+                    .tweet-handle {
+                        color: var(--grey-text);
+                        font-size: 0.9rem;
+                    }
+
+                    .tweet-followers {
+                        color: var(--grey-text);
+                        font-size: 0.85rem;
+                        opacity: 0.7;
+                    }
+
+                    .tweet-text {
+                        color: var(--white);
+                        margin-bottom: 0.75rem;
+                        line-height: 1.5;
+                    }
+
+                    .tweet-metrics {
+                        display: flex;
+                        gap: 1rem;
+                        font-size: 0.85rem;
+                        color: var(--grey-text);
+                    }
+
+                    .tweet-metric-item {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.375rem;
+                        color: var(--grey-text);
+                        white-space: nowrap;
+                    }
+
+                    .tweet-icon {
+                        width: 14px;
+                        height: 14px;
+                        filter: brightness(0) saturate(100%) invert(65%) sepia(10%) saturate(200%) hue-rotate(194deg) brightness(90%) contrast(90%);
+                    }
+
+                    /* Creative Sentiment Layout */
+                    .sentiment-stacked-bar {
+                        display: flex;
+                        height: 10px;
+                        border-radius: 99px;
+                        overflow: hidden;
+                        margin-bottom: 1rem;
+                        gap: 2px;
+                    }
+
+                    .sentiment-segment {
+                        height: 100%;
+                        border-radius: 99px;
+                        transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+                    }
+
+                    .segment-positive {
+                        background: linear-gradient(90deg, #16A34A, #4ADE80);
+                    }
+
+                    .segment-neutral {
+                        background: linear-gradient(90deg, #475569, #94A3B8);
+                    }
+
+                    .segment-negative {
+                        background: linear-gradient(90deg, #DC2626, #F87171);
+                    }
+
+                    .sentiment-cards {
+                        display: grid;
+                        grid-template-columns: repeat(3, 1fr);
+                        gap: 0.75rem;
+                    }
+
+                    .sentiment-card {
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        gap: 0.3rem;
+                        padding: 1rem 0.75rem;
+                        border-radius: 12px;
+                        border: 1px solid;
+                        text-align: center;
+                        transition: transform 0.2s, box-shadow 0.2s;
+                    }
+
+                    .sentiment-card:hover {
+                        transform: translateY(-3px);
+                    }
+
+                    .card-positive {
+                        background: rgba(34, 197, 94, 0.06);
+                        border-color: rgba(34, 197, 94, 0.2);
+                        box-shadow: 0 4px 12px rgba(34, 197, 94, 0.06);
+                    }
+
+                    .card-positive:hover {
+                        box-shadow: 0 8px 20px rgba(34, 197, 94, 0.12);
+                    }
+
+                    .card-neutral {
+                        background: rgba(148, 163, 184, 0.06);
+                        border-color: rgba(148, 163, 184, 0.15);
+                    }
+
+                    .card-negative {
+                        background: rgba(239, 68, 68, 0.06);
+                        border-color: rgba(239, 68, 68, 0.2);
+                        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.04);
+                    }
+
+                    .card-negative:hover {
+                        box-shadow: 0 8px 20px rgba(239, 68, 68, 0.1);
+                    }
+
+                    .sentiment-icon {
+                        width: 28px;
+                        height: 28px;
+                        margin-bottom: 0.25rem;
+                    }
+
+                    .card-positive .sentiment-icon {
+                        filter: brightness(0) saturate(100%) invert(60%) sepia(35%) saturate(1200%) hue-rotate(95deg) brightness(95%) contrast(90%);
+                    }
+
+                    .card-neutral .sentiment-icon {
+                        filter: brightness(0) saturate(100%) invert(65%) sepia(10%) saturate(200%) hue-rotate(194deg) brightness(90%) contrast(90%);
+                    }
+
+                    .card-negative .sentiment-icon {
+                        filter: brightness(0) saturate(100%) invert(44%) sepia(21%) saturate(1100%) hue-rotate(317deg) brightness(93%) contrast(85%);
+                    }
+
+                    .sentiment-pct {
+                        font-size: 1.5rem;
+                        font-weight: 700;
+                        line-height: 1.1;
+                    }
+
+                    .value-positive {
+                        color: #4ADE80;
+                    }
+
+                    .value-neutral {
+                        color: var(--grey-text);
+                    }
+
+                    .value-negative {
+                        color: #F87171;
+                    }
+
+                    .sentiment-card-label {
+                        font-size: 0.65rem;
+                        color: var(--grey-text);
+                        text-transform: uppercase;
+                        letter-spacing: 0.08em;
+                        font-weight: 600;
+                    }
+
+                    /* ── Top Influenceur Card ── */
+                    .influencer-card {
+                        background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%);
+                        border: 1px solid rgba(148, 163, 184, 0.12);
+                        border-radius: 12px;
+                        padding: 1.25rem;
+                        transition: border-color 0.2s, transform 0.2s;
+                    }
+
+                    .influencer-card:hover {
+                        border-color: rgba(204, 201, 220, 0.22);
+                        transform: translateY(-2px);
+                    }
+
+                    .influencer-header {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                        margin-bottom: 1rem;
+                    }
+
+                    .influencer-icon {
+                        width: 18px;
+                        height: 18px;
+                        filter: brightness(0) saturate(100%) invert(84%) sepia(27%) saturate(744%) hue-rotate(356deg) brightness(103%) contrast(95%);
+                    }
+
+                    .influencer-name {
+                        font-weight: 700;
+                        color: var(--white);
+                        font-size: 1rem;
+                    }
+
+                    .influencer-handle {
+                        color: var(--grey-text);
+                        font-size: 0.85rem;
+                    }
+
+                    .influencer-metrics {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+                        gap: 0.75rem;
+                    }
+
+                    .influencer-metric {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                        color: var(--grey-text);
+                        font-size: 0.85rem;
+                    }
+
+                    .metric-icon-small {
+                        width: 14px;
+                        height: 14px;
+                        filter: brightness(0) saturate(100%) invert(65%) sepia(10%) saturate(200%) hue-rotate(194deg) brightness(90%) contrast(90%);
+                    }
+
+                    /* ── Top Hashtags ── */
+                    .hashtags-list {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 0.75rem;
+                    }
+
+                    .hashtag-item {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.75rem;
+                        background: rgba(255, 255, 255, 0.02);
+                        border: 1px solid rgba(148, 163, 184, 0.08);
+                        border-radius: 8px;
+                        padding: 0.625rem 0.875rem;
+                        transition: border-color 0.2s, background 0.2s;
+                    }
+
+                    .hashtag-item:hover {
+                        border-color: rgba(29, 155, 240, 0.3);
+                        background: rgba(29, 155, 240, 0.05);
+                    }
+
+                    .hashtag-tag {
+                        color: #1D9BF0;
+                        font-weight: 600;
+                        font-size: 0.9rem;
+                    }
+
+                    .hashtag-count {
+                        color: var(--white);
+                        font-weight: 500;
+                        font-size: 0.85rem;
+                    }
+
+                    .hashtag-engagement {
+                        color: var(--grey-text);
+                        font-size: 0.75rem;
+                    }
+
+                    /* ── Répartition Géographique ── */
+                    .geo-list {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 0.875rem;
+                    }
+
+                    .geo-item {
+                        background: rgba(255, 255, 255, 0.02);
+                        border: 1px solid rgba(148, 163, 184, 0.08);
+                        border-radius: 10px;
+                        padding: 0.875rem 1rem;
+                        transition: border-color 0.2s;
+                    }
+
+                    .geo-item:hover {
+                        border-color: rgba(99, 102, 241, 0.3);
+                    }
+
+                    .geo-header {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.625rem;
+                        margin-bottom: 0.5rem;
+                    }
+
+                    .flag-icon {
+                        width: 20px;
+                        height: 15px;
+                        border-radius: 2px;
+                        object-fit: cover;
+                    }
+
+                    .geo-country {
+                        flex: 1;
+                        color: var(--white);
+                        font-weight: 500;
+                        font-size: 0.9rem;
+                    }
+
+                    .geo-percentage {
+                        color: var(--lavender);
+                        font-weight: 700;
+                        font-size: 0.9rem;
+                    }
+
+                    .geo-bar {
+                        height: 6px;
+                        background: rgba(148, 163, 184, 0.1);
+                        border-radius: 99px;
+                        overflow: hidden;
+                        margin-bottom: 0.375rem;
+                    }
+
+                    .geo-bar-fill {
+                        height: 100%;
+                        background: linear-gradient(90deg, #6366F1, #A78BFA);
+                        border-radius: 99px;
+                        transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+                    }
+
+                    .geo-impressions {
+                        color: var(--grey-text);
+                        font-size: 0.75rem;
+                    }
+
+                    /* ── Event Title ── */
+                    .event-title {
+                        font-size: 1.875rem;
+                        font-weight: 700;
+                        background: linear-gradient(135deg, var(--white) 0%, var(--lavender) 100%);
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                        background-clip: text;
+                        line-height: 1.2;
+                    }
+
+                    /* ── Meta Row ── */
+                    .meta-row {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.75rem;
+                        flex-wrap: wrap;
+                    }
+
+                    .badge {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 0.375rem;
+                        padding: 0.3rem 0.75rem;
+                        border-radius: 99px;
+                        font-size: 0.8rem;
+                        font-weight: 600;
+                    }
+
+                    .badge-twitch {
+                        background: rgba(145, 70, 255, 0.15);
+                        color: #A970FF;
+                        border: 1px solid rgba(145, 70, 255, 0.3);
+                    }
+
+                    .badge-twitter,
+                    .badge-x {
+                        background: rgba(29, 155, 240, 0.15);
+                        color: #1D9BF0;
+                        border: 1px solid rgba(29, 155, 240, 0.3);
+                    }
+
+                    .badge-default {
+                        background: rgba(59, 130, 246, 0.15);
+                        color: #60A5FA;
+                        border: 1px solid rgba(59, 130, 246, 0.3);
+                    }
+
+                    .badge-platform-icon {
+                        width: 13px;
+                        height: 13px;
+                    }
+
+                    .badge-twitch .badge-platform-icon {
+                        filter: brightness(0) saturate(100%) invert(47%) sepia(80%) saturate(1500%) hue-rotate(250deg) brightness(110%) contrast(100%);
+                    }
+
+                    .badge-twitter .badge-platform-icon,
+                    .badge-x .badge-platform-icon {
+                        filter: brightness(0) saturate(100%) invert(52%) sepia(90%) saturate(500%) hue-rotate(185deg) brightness(100%) contrast(102%);
+                    }
+
+                    .meta-date {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 0.35rem;
+                        color: var(--grey-text);
+                        font-size: 0.9rem;
+                    }
+
+                    .meta-icon {
+                        width: 14px;
+                        height: 14px;
+                        filter: brightness(0) saturate(100%) invert(65%) sepia(10%) saturate(200%) hue-rotate(194deg) brightness(90%) contrast(90%);
+                        flex-shrink: 0;
+                    }
+
+                    .meta-slug {
+                        font-size: 0.75rem;
+                        color: var(--grey-text);
+                        opacity: 0.55;
+                        font-family: monospace;
+                        letter-spacing: 0.02em;
+                        background: rgba(255, 255, 255, 0.04);
+                        border: 1px solid rgba(148, 163, 184, 0.1);
+                        border-radius: 6px;
+                        padding: 0.2rem 0.5rem;
+                    }
+
+                    /* ── Generate Report Button ── */
+                    .btn-generate {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 0.5rem;
+                        background: linear-gradient(135deg, rgba(204, 201, 220, 0.12) 0%, rgba(204, 201, 220, 0.05) 100%);
+                        color: var(--lavender);
+                        border: 1px solid rgba(204, 201, 220, 0.25);
+                        padding: 0.75rem 1.5rem;
+                        border-radius: 10px;
+                        font-weight: 600;
+                        font-size: 0.9rem;
+                        cursor: pointer;
+                        transition: transform 0.2s, box-shadow 0.2s, background 0.2s, border-color 0.2s;
+                        backdrop-filter: blur(8px);
+                    }
+
+                    .btn-generate:hover {
+                        transform: translateY(-2px);
+                        background: linear-gradient(135deg, rgba(204, 201, 220, 0.2) 0%, rgba(204, 201, 220, 0.09) 100%);
+                        border-color: rgba(204, 201, 220, 0.45);
+                        box-shadow: 0 8px 24px -4px rgba(204, 201, 220, 0.15);
+                    }
+
+                    .btn-generate-icon {
+                        width: 18px;
+                        height: 18px;
+                        filter: brightness(0) saturate(100%) invert(85%) sepia(6%) saturate(19%) hue-rotate(194deg) brightness(94%) contrast(93%);
+                    }
+
+                    .section-heading-row {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 1rem;
+                    }
+
+                    .btn-analysis {
+                        background: rgba(96, 165, 250, 0.12);
+                        border: 1px solid rgba(96, 165, 250, 0.35);
+                        color: #93C5FD;
+                        padding: 0.55rem 0.9rem;
+                        border-radius: 8px;
+                        font-size: 0.8rem;
+                        font-weight: 600;
+                        cursor: pointer;
+                    }
+
+                    .btn-analysis:disabled {
+                        opacity: 0.6;
+                        cursor: wait;
+                    }
+
+                    .storytelling-slides {
+                        display: grid;
+                        gap: 0.75rem;
+                    }
+
+                    .storytelling-slide {
+                        padding: 1rem;
+                        border: 1px solid rgba(148, 163, 184, 0.12);
+                        border-radius: 10px;
+                        background: rgba(255, 255, 255, 0.025);
+                    }
+
+                    .storytelling-slide h4 {
+                        color: var(--white);
+                        font-size: 0.95rem;
+                        margin-bottom: 0.4rem;
+                    }
+
+                    .storytelling-slide p {
+                        color: var(--grey-text);
+                        line-height: 1.6;
+                        margin: 0;
+                    }
+
+                    .analysis-error {
+                        color: #FCA5A5;
+                        margin: 0;
+                    }
+                </style>
 
 @code {
     [Parameter] public string Slug { get; set; } = string.Empty;
@@ -1166,69 +1211,85 @@
     [Parameter] public EventCallback<string> OnOpenPdfCustomize { get; set; }
     private Event? _event;
     private bool _isLoading = true;
+    private bool _isAnalyzing;
     private string? _lightboxUrl;
+    private string? _analysisError;
+    private StorytellingReponse? _storytelling;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            if (DemoDataService.IsInDemoMode)
+            using var dbContext = await DbFactory.CreateDbContextAsync();
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+
+            if (!authState.TryGetUserId(out var userId))
             {
-                Console.WriteLine(Slug);
-
-                // Mode démo: charger depuis StaticDemoRepository
-                _event = await DemoDataService.GetDemoEventBySlugAsync(Slug);
-
-                if (_event is null)
-                {
-                    return;
-                }
-
-                // Si l'événement n'a pas de TwitterAnalytics, utiliser StaticReportRepository
-                if (string.IsNullOrEmpty(_event.TwitterHashtags))
-                {
-                    // Assigner un hashtag par défaut pour afficher les données Twitter
-                    _event.TwitterHashtags = "#" + _event.Name.Replace(" ", "");
-
-                    // Charger les données Twitter depuis StaticReportRepository
-                    var reports = StaticReportRepository.GetAllReports();
-                    if (reports.ContainsKey(_event.Slug))
-                    {
-                        _event.TwitterAnalytics = reports[_event.Slug];
-                    }
-                    else
-                    {
-                        // Utiliser un rapport générique basé sur le nom
-                        _event.TwitterAnalytics = StaticReportRepository.GetCustomEventReport(
-                            _event.Name.Replace(" ", ""),
-                            "@TopInfluencer"
-                        );
-                    }
-                }
+                Navigation.NavigateTo("/login?message=sessionExpired");
+                return;
             }
-            else
+
+            dbContext.SetCurrentUser(userId);
+            _event = await dbContext.Set<Event>()
+                .Include(e => e.Media)
+                .FirstOrDefaultAsync(e => e.Slug == Slug);
+
+            if (_event is not null)
             {
-                // Mode normal: charger depuis la base de données
-                using var dbContext = await DbFactory.CreateDbContextAsync();
-                var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-
-                if (!authState.TryGetUserId(out var userId))
+                await using var analyticsContext = await AnalyticsDbFactory.CreateDbContextAsync();
+                var analysis = await analyticsContext.StorytellingAnalyses
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(item => item.EventId == _event.Id);
+                if (analysis is not null)
                 {
-                    Navigation.NavigateTo("/login?message=sessionExpired");
-
-                    return;
+                    _storytelling = System.Text.Json.JsonSerializer.Deserialize<StorytellingReponse>(analysis.ResponseJson);
                 }
-
-                dbContext.SetCurrentUser(userId);
-
-                _event = await dbContext.Set<Event>()
-                    .Include(e => e.Media)
-                    .FirstOrDefaultAsync(e => e.Slug == Slug);
             }
         }
         finally
         {
             _isLoading = false;
+        }
+    }
+
+    private async Task RunStorytellingAnalysis()
+    {
+        if (_event is null || _isAnalyzing)
+            return;
+
+        _isAnalyzing = true;
+        _analysisError = null;
+
+        try
+        {
+            var response = await StorytellingService.GenerateStorytellingAsync(_event.Slug);
+            if (!response.Success || response.Data is null)
+            {
+                _analysisError = response.ErrorMessage ?? "L'analyse storytelling a échoué.";
+                return;
+            }
+
+            _storytelling = response.Data;
+            await using var analyticsContext = await AnalyticsDbFactory.CreateDbContextAsync();
+            var analysis = await analyticsContext.StorytellingAnalyses
+                .FirstOrDefaultAsync(item => item.EventId == _event.Id);
+            if (analysis is null)
+            {
+                analysis = new() { EventId = _event.Id };
+                analyticsContext.StorytellingAnalyses.Add(analysis);
+            }
+
+            analysis.ResponseJson = System.Text.Json.JsonSerializer.Serialize(_storytelling);
+            analysis.GeneratedAt = DateTime.UtcNow;
+            await analyticsContext.SaveChangesAsync();
+        }
+        catch (Exception exception)
+        {
+            _analysisError = $"Erreur pendant l'analyse : {exception.Message}";
+        }
+        finally
+        {
+            _isAnalyzing = false;
         }
     }
 
@@ -1279,7 +1340,7 @@
         await context.SaveChangesAsync();
         // Reload to ensure we have the latest state (IDs etc)
         _event = eventEntity;
-        
+
         StateHasChanged();
     }
 

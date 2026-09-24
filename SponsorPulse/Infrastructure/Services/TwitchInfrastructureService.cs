@@ -84,13 +84,13 @@ public class TwitchInfrastructureService(
                 client.DefaultRequestHeaders.Add("Authorization", $"Bearer {authData.AccessToken}");
             }
 
-            string targetChannel = "kenbogard";
+            string broadcasterId = "kenbogard";
 
             logger.LogInformation(
                 "[TwitchTracker] Analyse du live pour : {Channel}",
-                targetChannel
+                broadcasterId
             );
-            var streamReq = await client.GetAsync($"{BaseUrl}/streams?user_id={targetChannel}");
+            var streamReq = await client.GetAsync($"{BaseUrl}/streams?user_id={broadcasterId}");
 
             if (!streamReq.IsSuccessStatusCode)
             {

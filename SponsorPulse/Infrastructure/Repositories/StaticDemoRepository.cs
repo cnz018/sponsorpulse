@@ -21,7 +21,7 @@ public static class StaticDemoRepository
                 description: "League of Legends Championship Spring Finals",
                 date: new DateTime(2026, 4, 15, 18, 0, 0),
                 platform: "Twitch",
-                channelId: "lec",
+                broadcasterId: "lec",
                 slug: "lec2026a"
             ),
             CreateDemoEvent(
@@ -30,7 +30,7 @@ public static class StaticDemoRepository
                 description: "Valorant Pro esports competition",
                 date: new DateTime(2026, 3, 20, 16, 30, 0),
                 platform: "Twitch",
-                channelId: "valorantesports",
+                broadcasterId: "valorantesports",
                 slug: "valo2026b"
             ),
             CreateDemoEvent(
@@ -39,7 +39,7 @@ public static class StaticDemoRepository
                 description: "Counter-Strike 2 Major Championship",
                 date: new DateTime(2026, 5, 10, 14, 0, 0),
                 platform: "Twitch",
-                channelId: "esl_csgo",
+                broadcasterId: "esl_csgo",
                 slug: "cs2maj26c"
             ),
             CreateDemoEvent(
@@ -48,7 +48,7 @@ public static class StaticDemoRepository
                 description: "Path to the International",
                 date: new DateTime(2026, 2, 28, 19, 0, 0),
                 platform: "YouTube",
-                channelId: "dotaesports",
+                broadcasterId: "dotaesports",
                 slug: "dota2i26d"
             ),
             CreateDemoEvent(
@@ -57,7 +57,7 @@ public static class StaticDemoRepository
                 description: "Battle Royale World Championship",
                 date: new DateTime(2026, 6, 5, 17, 0, 0),
                 platform: "Twitch",
-                channelId: "pubgesports",
+                broadcasterId: "pubgesports",
                 slug: "pubg2026e"
             ),
         };
@@ -276,11 +276,11 @@ public static class StaticDemoRepository
         string description,
         DateTime date,
         string platform,
-        string channelId,
+        string broadcasterId,
         string slug
     )
     {
-        var evt = new Event(id, name, description, date, platform, channelId, slug)
+        var evt = new Event(id, name, description, date, platform, broadcasterId, slug)
         {
             Status = EventStatus.Completed,
         };

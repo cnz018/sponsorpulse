@@ -189,6 +189,16 @@ public class TwitchAuthStateService(
         }
     }
 
+    public async Task<string?> GetValidAccessTokenForUserAsync(Guid userId)
+    {
+        using var dbContext = _dbFactory.CreateDbContext();
+        var token = await dbContext.TwitchAuthTokens.SingleOrDefaultAsync(t => t.UserId == userId);
+
+        return token?.TwitchUserId is null
+            ? null
+            : await GetValidAccessTokenAsync(token.TwitchUserId);
+    }
+
     private record RefreshTokenResponse(
         [property: JsonPropertyName("access_token")] string AccessToken,
         [property: JsonPropertyName("refresh_token")] string? RefreshToken,

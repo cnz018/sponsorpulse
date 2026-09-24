@@ -1,18 +1,22 @@
 @using System.Text
+@using System.Security.Claims
+@using System.Text.Json
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Authorization
 @using SponsorPulse.Application.Common.Interfaces
 @using SponsorPulse.Domain.Entities
 @using SponsorPulse.Domain.Models
 @inject ITwitchService TwitchService
 @inject ILogger<TwitchFetcher> Logger
 @inject HttpClient Http
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <div class="twitch-fetcher mb-8">
     <div class="flex items-center gap-4 mb-4">
         <div class="flex-grow">
-            <label class="block text-gray-400 text-xs uppercase font-bold mb-2">Canal Twitch</label>
+            <label class="block text-gray-400 text-xs uppercase font-bold mb-2">Broadcaster ID Twitch</label>
             <div class="flex gap-2">
-                <input type="text" class="sp-input flex-grow" disabled value="@EventToUpdate.ChannelId" />
+                <input type="text" class="sp-input flex-grow" disabled value="@EventToUpdate.BroadcasterId" />
 
                 <button class="btn-fetch" @onclick="FetchData" disabled="@IsLoading">
                     @if (IsLoading)
@@ -90,7 +94,7 @@
                     <div>
                         <span class="text-gray-400 block text-xs">Durée</span>
                         <span class="text-white font-mono">@(EventToUpdate.StreamDuration?.ToString(@"hh\:mm") ??
-                                                                                                                                                                                                                                                                                "--:--")</span>
+                                                                                                                                                                                                                                                                                                            "--:--")</span>
                         </div>
                     </div>
                 </div>
@@ -225,7 +229,26 @@
             EventToUpdate.Status = EventStatus.Fetching;
 
             // Appel HTTP POST vers l'Azure Function pour déclencher la collecte et la sauvegarde
-            var response = await Http.PostAsync($"{AzureFunctionBaseUrl}/collect/twitch/", new StringContent($"{{\"channelId\": \"{EventToUpdate.ChannelId}\"}}", Encoding.UTF8, "application/json"));
+            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var userId = authenticationState.User.FindFirst("sub")?.Value
+                ?? authenticationState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (!Guid.TryParse(userId, out var currentUserId))
+            {
+                ErrorMessage = "Utilisateur non authentifié.";
+                EventToUpdate.Status = EventStatus.Error;
+                return;
+            }
+
+            var requestBody = JsonSerializer.Serialize(new
+            {
+                broadcasterId = EventToUpdate.BroadcasterId,
+                userId = currentUserId,
+            });
+            var response = await Http.PostAsync(
+                $"{AzureFunctionBaseUrl}/collect/twitch/",
+                new StringContent(requestBody, Encoding.UTF8, "application/json")
+            );
 
             if (response.IsSuccessStatusCode && response.Content != null)
             {

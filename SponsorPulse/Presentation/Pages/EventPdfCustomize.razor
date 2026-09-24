@@ -5,10 +5,20 @@
 @using SponsorPulse.Infrastructure.Repositories
 @using SponsorPulse.Application.Services
 @using SponsorPulse.Application.Common.Models
+@using SponsorPulse.Application.Common.Interfaces
+@using SponsorPulse.Application.Common.Configuration
+@using SponsorPulse.Application.Common.Extensions
+@using SponsorPulse.Infrastructure.Persistence
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.JSInterop
 @inject NavigationManager Navigation
-@inject IDemoDataService DemoDataService
 @inject IPdfGenerationService PdfGenerationService
+@inject IStorytellingService StorytellingService
+@inject IDbContextFactory<SponsorPulseDbContext> DbFactory
+@inject IDbContextFactory<SponsorPulseAnalyticsDbContext> AnalyticsDbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject Microsoft.Extensions.Options.IOptions<ReportSettings> ReportOptions
 @inject IJSRuntime JS
 
 <style>
@@ -380,7 +390,6 @@
     private bool showPreviewModal = false;
     private string generatedHtml = string.Empty;
     private List<ToastMessage> toasts = new();
-    private DemoSettings? demoSettings;
 
     private class ToastMessage
     {
@@ -392,20 +401,33 @@
     protected override async Task OnInitializedAsync()
     {
         if (string.IsNullOrEmpty(Slug))
-            Navigation.NavigateTo("/dashboard");
-        else
         {
-            var events = StaticDemoRepository.GetDemoEvents();
-            currentEvent = events.FirstOrDefault(e => e.Slug == Slug);
-            if (currentEvent == null)
-                Navigation.NavigateTo("/dashboard");
+            Navigation.NavigateTo("/dashboard");
+            return;
         }
 
-        demoSettings = await DemoDataService.GetDemoSettingsAsync();
-        companyName = demoSettings?.OrganizationName ?? "Votre Entreprise";
-        primaryColor = demoSettings?.PrimaryColor ?? "#CCC9DC";
-        secondaryColor = demoSettings?.SecondaryColor ?? "#475569";
-        uploadedFileName = demoSettings?.LogoBase64;
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (!authState.TryGetUserId(out var userId))
+        {
+            Navigation.NavigateTo("/login?message=sessionExpired");
+            return;
+        }
+
+        await using var context = await DbFactory.CreateDbContextAsync();
+        context.SetCurrentUser(userId);
+        currentEvent = await context.Events
+            .Include(item => item.Media)
+            .FirstOrDefaultAsync(item => item.Slug == Slug);
+
+        if (currentEvent is null)
+        {
+            Navigation.NavigateTo("/dashboard");
+            return;
+        }
+
+        companyName = ReportOptions.Value.DefaultCompanyName;
+        primaryColor = ReportOptions.Value.PrimaryColor;
+        secondaryColor = ReportOptions.Value.SecondaryColor;
     }
 
     private string FormatDuration(TimeSpan? duration) =>
@@ -440,6 +462,9 @@
 
         try
         {
+            if (!await EnsureStorytellingAsync())
+                return;
+
             var options = new PdfCustomizationOptions(
                 CompanyName: companyName,
                 LogoUrl: uploadedFileName ?? string.Empty,
@@ -447,46 +472,21 @@
                 SecondaryColor: secondaryColor
             );
 
-            if (DemoDataService.IsInDemoMode)
+            AddToast("Génération du PDF en cours...", "info", "📄");
+            StateHasChanged();
+
+            var result = await PdfGenerationService.GeneratePdfAsync(currentEvent, options);
+
+            if (result.Success && result.PdfBytes != null)
             {
-                // Show generating toast
-                AddToast("Génération du PDF en cours...", "info", "📄");
-                StateHasChanged();
-
-                // Generate the PDF/HTML
-                var result = await PdfGenerationService.GeneratePdfAsync(currentEvent, options);
-
-                if (result.Success && result.PdfBytes != null)
-                {
-                    // In demo mode, store the HTML and open preview modal
-                    generatedHtml = System.Text.Encoding.UTF8.GetString(result.PdfBytes);
-                    showPreviewModal = true;
-
-                    AddToast("Rapport prêt !", "success", "✅");
-                }
-                else
-                {
-                    AddToast($"Erreur: {result.ErrorMessage}", "info", "⚠️");
-                }
+                AddToast("PDF généré avec succès !", "success", "🎉");
+                var fileName = $"Rapport_{currentEvent.Name.Replace(" ", "_")}_{DateTime.Now:yyyyMMdd}.pdf";
+                var pdfBase64 = Convert.ToBase64String(result.PdfBytes);
+                await JS.InvokeVoidAsync("downloadFile", fileName, "application/pdf", pdfBase64);
             }
             else
             {
-                // Production mode - generate actual PDF
-                var result = await PdfGenerationService.GeneratePdfAsync(currentEvent, options);
-
-                if (result.Success && result.PdfBytes != null)
-                {
-                    AddToast("PDF généré avec succès !", "success", "🎉");
-
-                    // Download the PDF
-                    var fileName = $"Rapport_{currentEvent.Name.Replace(" ", "_")}_{DateTime.Now:yyyyMMdd}.pdf";
-                    var pdfBase64 = Convert.ToBase64String(result.PdfBytes);
-                    await JS.InvokeVoidAsync("downloadFile", fileName, "application/pdf", pdfBase64);
-                }
-                else
-                {
-                    AddToast($"Erreur: {result.ErrorMessage}", "info", "⚠️");
-                }
+                AddToast($"Erreur: {result.ErrorMessage}", "info", "⚠️");
             }
         }
         catch (Exception ex)
@@ -498,6 +498,36 @@
             isGenerating = false;
             StateHasChanged();
         }
+    }
+
+    private async Task<bool> EnsureStorytellingAsync()
+    {
+        if (currentEvent is null)
+            return false;
+
+        await using var analyticsContext = await AnalyticsDbFactory.CreateDbContextAsync();
+        var analysis = await analyticsContext.StorytellingAnalyses
+            .FirstOrDefaultAsync(item => item.EventId == currentEvent.Id);
+        if (analysis is not null)
+            return true;
+
+        AddToast("Analyse storytelling en cours...", "info", "📝");
+        var response = await StorytellingService.GenerateStorytellingAsync(currentEvent.Slug);
+        if (!response.Success || response.Data is null)
+        {
+            AddToast($"Analyse impossible : {response.ErrorMessage}", "info", "⚠️");
+            return false;
+        }
+
+        analysis = new()
+        {
+            EventId = currentEvent.Id,
+            ResponseJson = System.Text.Json.JsonSerializer.Serialize(response.Data),
+            GeneratedAt = DateTime.UtcNow,
+        };
+        analyticsContext.StorytellingAnalyses.Add(analysis);
+        await analyticsContext.SaveChangesAsync();
+        return true;
     }
 
     private void AddToast(string message, string type = "info", string icon = "ℹ️")

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SponsorPulse.Infrastructure.Persistence;
 
@@ -10,9 +11,11 @@ using SponsorPulse.Infrastructure.Persistence;
 namespace SponsorPulse.Migrations
 {
     [DbContext(typeof(SponsorPulseDbContext))]
-    partial class SponsorPulseDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260915170808_RenameChannelIdToBroadcasterId")]
+    partial class RenameChannelIdToBroadcasterId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
@@ -245,7 +248,7 @@ namespace SponsorPulse.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("Dashboards", (string)null);
+                    b.ToTable("Dashboards");
                 });
 
             modelBuilder.Entity("SponsorPulse.Domain.Entities.Event", b =>
@@ -314,7 +317,7 @@ namespace SponsorPulse.Migrations
 
                     b.HasIndex("OwnerId");
 
-                    b.ToTable("Events", (string)null);
+                    b.ToTable("Events");
                 });
 
             modelBuilder.Entity("SponsorPulse.Domain.Entities.EventMedia", b =>
@@ -352,7 +355,7 @@ namespace SponsorPulse.Migrations
 
                     b.HasIndex("EventId");
 
-                    b.ToTable("EventMedia", (string)null);
+                    b.ToTable("EventMedia");
                 });
 
             modelBuilder.Entity("SponsorPulse.Domain.Entities.LinkedAccount", b =>
@@ -388,7 +391,7 @@ namespace SponsorPulse.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("LinkedAccounts", (string)null);
+                    b.ToTable("LinkedAccounts");
                 });
 
             modelBuilder.Entity("SponsorPulse.Domain.Entities.Settings", b =>
@@ -414,7 +417,7 @@ namespace SponsorPulse.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("Settings", (string)null);
+                    b.ToTable("Settings");
                 });
 
             modelBuilder.Entity("SponsorPulse.Domain.Entities.TwitchAuthToken", b =>
@@ -452,7 +455,7 @@ namespace SponsorPulse.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("TwitchAuthTokens", (string)null);
+                    b.ToTable("TwitchAuthTokens");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

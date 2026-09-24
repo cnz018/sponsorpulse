@@ -27,7 +27,8 @@ public class ManualTwitchTrackingFunction(
     private readonly IDbContextFactory<SponsorPulseAnalyticsDbContext> _dbFactory = dbFactory;
     private readonly ILogger<ManualTwitchTrackingFunction> _logger = logger;
     private static StreamPlatform CurrentPlatform => StreamPlatform.Twitch;
-    private static JsonSerializerOptions _jsonOptions => new() { PropertyNameCaseInsensitive = true };
+    private static JsonSerializerOptions _jsonOptions =>
+        new() { PropertyNameCaseInsensitive = true };
 
     /// <summary>
     /// Endpoint HTTP permettant de déclencher manuellement la collecte pour un canal donné.
@@ -54,7 +55,8 @@ public class ManualTwitchTrackingFunction(
             return badbodyResponse;
         }
 
-        string? channelId = null;
+        string? broadcasterId = null;
+        Guid? requestUserId = null;
 
         try
         {
@@ -68,15 +70,17 @@ public class ManualTwitchTrackingFunction(
 
             if (!string.IsNullOrWhiteSpace(body))
             {
-                var request = JsonSerializer.Deserialize<TrackingRequest>(
-                    body,
-                    _jsonOptions
-                );
-                channelId = request?.ChannelId;
+                var request = JsonSerializer.Deserialize<TrackingRequest>(body, _jsonOptions);
+                broadcasterId = request?.BroadcasterId;
+                requestUserId = request?.UserId;
 
                 _logger.LogInformation(
-                    "[Trigger Manuel] Corps JSON lu pour le canal Twitch. channelId présent: {HasChannelId}",
-                    !string.IsNullOrWhiteSpace(channelId)
+                    "[Trigger Manuel] Corps JSON lu pour le canal Twitch. broadcasterId présent: {HasBroadcasterId}",
+                    !string.IsNullOrWhiteSpace(broadcasterId)
+                );
+                _logger.LogInformation(
+                    "[Trigger Manuel] Corps JSON lu pour le canal Twitch. userId présent: {HasUserId}",
+                    requestUserId.HasValue
                 );
             }
         }
@@ -85,26 +89,28 @@ public class ManualTwitchTrackingFunction(
             _logger.LogWarning(ex, "[Trigger Manuel] Corps JSON invalide pour le canal Twitch.");
         }
 
-        // Keep query-string support for callers using the previous endpoint contract.
-        channelId ??= req.Query["channelId"];
+        broadcasterId ??= req.Query["broadcasterId"];
 
-        if (string.IsNullOrWhiteSpace(channelId))
+        if (string.IsNullOrWhiteSpace(broadcasterId))
         {
             _logger.LogWarning(
-                "[Trigger Manuel] Requête reçue sans channelId pour le canal Twitch."
+                "[Trigger Manuel] Requête reçue sans broadcasterId pour le canal Twitch."
             );
 
             var badRequestResponse = req.CreateResponse(HttpStatusCode.BadRequest);
-            await badRequestResponse.WriteStringAsync("Le paramètre channelId est obligatoire.");
+            await badRequestResponse.WriteStringAsync(
+                "Le paramètre broadcasterId est obligatoire."
+            );
 
             return badRequestResponse;
         }
 
         _logger.LogInformation("[Trigger Manuel] Requête reçue complète pour le canal Twitch.");
-
+        _logger.LogInformation("[Trigger Manuel] broadcasterId: {BroadcasterId}", broadcasterId);
+        _logger.LogInformation("[Trigger Manuel] userId: {UserId}", requestUserId);
         // 1. Obtenir la stratégie Twitch via le resolver
         var strategy = _strategyResolver.GetStrategy(CurrentPlatform);
-        var resultObject = await strategy.CaptureAsync(channelId);
+        var resultObject = await strategy.CaptureAsync(broadcasterId, requestUserId);
 
         if (
             resultObject is not Result<TwitchMetrics> result
@@ -124,7 +130,7 @@ public class ManualTwitchTrackingFunction(
         // 2. Créer et enregistrer le snapshot analytique
         var snapshot = new TwitchStreamSnapshot
         {
-            ChannelName = channelId,
+            ChannelName = broadcasterId,
             ViewerCount = metrics.ViewerCount,
             GameName = "Non spécifié",
             CapturedAt = DateTimeOffset.UtcNow,
@@ -144,5 +150,5 @@ public class ManualTwitchTrackingFunction(
         return response;
     }
 
-    private sealed record TrackingRequest(string? ChannelId);
+    private sealed record TrackingRequest(string? BroadcasterId, Guid? UserId);
 }

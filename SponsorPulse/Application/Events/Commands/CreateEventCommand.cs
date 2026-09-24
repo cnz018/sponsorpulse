@@ -27,8 +27,8 @@ public class CreateEventCommand : IValidatableObject
     [Required(ErrorMessage = "Veuillez sélectionner une plateforme.")]
     public string StreamPlatform { get; set; } = "Twitch";
 
-    [Required(ErrorMessage = "L'ID de la chaîne est requis.")]
-    public string ChannelId { get; set; } = string.Empty;
+    [Required(ErrorMessage = "Le broadcaster ID Twitch est requis.")]
+    public string BroadcasterId { get; set; } = string.Empty;
 
     [DataType(DataType.Date)]
     public DateTime? SocialStartDate { get; set; } = DefaultEventDate.AddDays(-2);

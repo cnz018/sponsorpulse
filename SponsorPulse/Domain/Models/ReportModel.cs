@@ -23,6 +23,7 @@ public record ReportModel
     // Contenu généré
     public string StorytellingText { get; init; } = string.Empty;
     public string AnalysisText { get; init; } = string.Empty;
+    public List<StorytellingReponse.Slide> StorytellingSlides { get; init; } = new();
     public List<string> OpportunitiesMissed { get; init; } = new();
     public List<string> Suggestions { get; init; } = new();
 

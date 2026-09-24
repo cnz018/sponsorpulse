@@ -51,6 +51,7 @@ builder.Services.AddDbContextFactory<SponsorPulseAnalyticsDbContext>(options =>
     options.UseSqlite(analyticsConnectionString);
 });
 
+builder.Services.AddScoped<ILinkedAccountManager, LinkedAccountManager>();
 builder.Services.AddScoped<ITwitchAuthStateService, TwitchAuthStateService>();
 
 builder.Services.AddHttpClient<TwitchTrackingStrategy>();

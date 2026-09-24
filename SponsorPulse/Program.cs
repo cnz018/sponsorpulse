@@ -58,7 +58,7 @@ builder.Services.AddDbContextFactory<SponsorPulseDbContext>(options =>
     options.UseSqlite(connectionString);
 });
 
-builder.Services.AddDbContext<SponsorPulseAnalyticsDbContext>(options =>
+builder.Services.AddDbContextFactory<SponsorPulseAnalyticsDbContext>(options =>
 {
     options.UseSqlite(analyticsConnectionString);
 });
@@ -142,10 +142,12 @@ using (var scope = app.Services.CreateScope())
         IDbContextFactory<SponsorPulseDbContext>
     >();
     using var context = await dbFactory.CreateDbContextAsync();
-    await context.Database.EnsureCreatedAsync();
+    await context.Database.MigrateAsync();
 
-    var analyticsContext =
-        scope.ServiceProvider.GetRequiredService<SponsorPulseAnalyticsDbContext>();
+    var analyticsFactory = scope.ServiceProvider.GetRequiredService<
+        IDbContextFactory<SponsorPulseAnalyticsDbContext>
+    >();
+    await using var analyticsContext = await analyticsFactory.CreateDbContextAsync();
     await analyticsContext.Database.MigrateAsync();
 }
 

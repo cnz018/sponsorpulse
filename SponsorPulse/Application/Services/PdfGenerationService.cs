@@ -1,16 +1,16 @@
 namespace SponsorPulse.Application.Services;
 
-using Microsoft.Extensions.Options;
-using SponsorPulse.Application.Common.Configuration;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using SponsorPulse.Domain.Entities;
 using SponsorPulse.Domain.Models;
+using SponsorPulse.Infrastructure.Persistence;
 
 public interface IPdfGenerationService
 {
     Task<PdfGenerationResult> GeneratePdfAsync(Event @event, PdfCustomizationOptions options);
     Task<string> GetPdfPreviewHtmlAsync(Event @event, PdfCustomizationOptions options);
     Task<ReportModel> BuildReportModelAsync(Event @event, PdfCustomizationOptions options);
-    bool IsInDemoMode { get; }
 }
 
 public record PdfCustomizationOptions(
@@ -29,13 +29,13 @@ public record PdfGenerationResult(
 
 public class PdfGenerationService : IPdfGenerationService
 {
-    private readonly DemoModeSettings _settings;
+    private readonly IDbContextFactory<SponsorPulseAnalyticsDbContext> _analyticsDbFactory;
 
-    public bool IsInDemoMode => _settings.IsDemo;
-
-    public PdfGenerationService(IOptions<DemoModeSettings> options)
+    public PdfGenerationService(
+        IDbContextFactory<SponsorPulseAnalyticsDbContext> analyticsDbFactory
+    )
     {
-        _settings = options.Value;
+        _analyticsDbFactory = analyticsDbFactory;
     }
 
     public async Task<PdfGenerationResult> GeneratePdfAsync(
@@ -47,25 +47,10 @@ public class PdfGenerationService : IPdfGenerationService
         {
             var html = await GetPdfPreviewHtmlAsync(@event, options);
 
-            if (_settings.IsDemo)
-            {
-                // Mode démo : retourner un contenu HTML encodé
-                var pdfBytes = System.Text.Encoding.UTF8.GetBytes(html);
-
-                return new PdfGenerationResult(
-                    Success: true,
-                    PdfBytes: pdfBytes,
-                    ErrorMessage: null,
-                    GeneratedAt: DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-                );
-            }
-
-            // Mode normal : appeler une vraie API de génération PDF (iTextSharp, Puppeteer, etc.)
-            // Pour l'instant, même comportement que la démo
-            var demoBytes = System.Text.Encoding.UTF8.GetBytes(html);
+            var pdfBytes = System.Text.Encoding.UTF8.GetBytes(html);
             return new PdfGenerationResult(
                 Success: true,
-                PdfBytes: demoBytes,
+                PdfBytes: pdfBytes,
                 ErrorMessage: null,
                 GeneratedAt: DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
             );
@@ -85,8 +70,12 @@ public class PdfGenerationService : IPdfGenerationService
     {
         var reportModel = await BuildReportModelAsync(@event, options);
 
-        // In demo mode, we return the full HTML with the report template
         var suggestionsHtml = string.Concat(reportModel.Suggestions.Select(s => $"<li>{s}</li>"));
+        var storytellingHtml = string.Concat(
+            reportModel.StorytellingSlides.Select(slide =>
+                $"<article><h4>{System.Net.WebUtility.HtmlEncode(slide.Titre)}</h4><p>{System.Net.WebUtility.HtmlEncode(slide.Contenu)}</p></article>"
+            )
+        );
         var impressionsStr =
             reportModel.TwitterAnalytics?.EstimatedImpressions.ToString("N0") ?? "N/A";
         var generatedDate = DateTime.Now.ToString("dd/MM/yyyy à HH:mm");
@@ -100,16 +89,6 @@ public class PdfGenerationService : IPdfGenerationService
     <title>Rapport d'Impact Sponsoring - {options.CompanyName}</title>
     <style>
         body {{ font-family: 'Georgia', serif; margin: 0; padding: 0; background: #f5f5f5; }}
-        .demo-alert {{ 
-            background: #EF4444; 
-            color: white; 
-            padding: 1rem; 
-            text-align: center; 
-            font-family: 'Arial', sans-serif;
-            font-weight: 600;
-            font-size: 1rem;
-            border-bottom: 4px solid #B91C1C;
-        }}
         .report-wrapper {{ max-width: 210mm; margin: 2rem auto; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
         .report-content {{ padding: 40px; }}
         h1 {{ color: {reportModel.PrimaryColor}; font-size: 2.5rem; margin-bottom: 1rem; }}
@@ -121,9 +100,6 @@ public class PdfGenerationService : IPdfGenerationService
     </style>
 </head>
 <body>
-    <div class=""demo-alert"">
-        ⚠️ Ceci est un modèle de démonstration
-    </div>
     <div class=""report-wrapper"">
         <div class=""report-content"">
             <h1>Rapport d'Impact Sponsoring</h1>
@@ -138,7 +114,7 @@ public class PdfGenerationService : IPdfGenerationService
             
             <div style=""margin: 2rem 0;"">
                 <h3 style=""color: {reportModel.PrimaryColor};"">Storytelling</h3>
-                <p style=""line-height: 1.8; text-align: justify;"">{reportModel.StorytellingText}</p>
+                <div style=""line-height: 1.8;"">{storytellingHtml}</div>
             </div>
             
             <div class=""recommendations-box"">
@@ -187,7 +163,8 @@ public class PdfGenerationService : IPdfGenerationService
                 GameName = @event.GameName ?? "N/A",
             },
             TwitterAnalytics = @event.TwitterAnalytics,
-            StorytellingText = GenerateStorytellingText(@event),
+            StorytellingText = string.Empty,
+            StorytellingSlides = await GetStorytellingSlidesAsync(@event),
             AnalysisText = GenerateAnalysisText(@event),
             OpportunitiesMissed = GenerateOpportunitiesMissed(@event),
             Suggestions = GenerateSuggestions(@event),
@@ -195,37 +172,17 @@ public class PdfGenerationService : IPdfGenerationService
         };
     }
 
-    private string GenerateStorytellingText(Event evt)
+    private async Task<List<StorytellingReponse.Slide>> GetStorytellingSlidesAsync(Event @event)
     {
-        var sb = new System.Text.StringBuilder();
+        await using var analyticsContext = await _analyticsDbFactory.CreateDbContextAsync();
+        var analysis = await analyticsContext
+            .StorytellingAnalyses.AsNoTracking()
+            .FirstOrDefaultAsync(item => item.EventId == @event.Id);
+        if (analysis is null)
+            return new List<StorytellingReponse.Slide>();
 
-        sb.Append(
-            $"L'événement {evt.Name} a marqué un tournant significatif dans la stratégie de sponsoring eSport. "
-        );
-
-        if (evt.ViewerCount > 50000)
-        {
-            sb.Append(
-                $"Avec plus de {evt.ViewerCount:N0} viewers simultanés, l'audience a démontré un engagement exceptionnel. "
-            );
-        }
-
-        if (evt.TwitterAnalytics != null)
-        {
-            sb.Append(
-                $"Sur les réseaux sociaux, {evt.TwitterAnalytics.TotalTweets:N0} tweets et {evt.TwitterAnalytics.TotalEngagement:N0} interactions "
-            );
-            sb.Append(
-                $"ont généré une valeur publicitaire équivalente de {evt.TwitterAnalytics.AdValueEquivalent:N0}€. "
-            );
-        }
-
-        sb.Append(
-            $"La plateforme {evt.StreamPlatform} a été le théâtre d'une performance remarquable, "
-        );
-        sb.Append($"positionnant votre marque au cœur de l'expérience eSport.");
-
-        return sb.ToString();
+        return JsonSerializer.Deserialize<StorytellingReponse>(analysis.ResponseJson)?.Slides
+            ?? new List<StorytellingReponse.Slide>();
     }
 
     private string GenerateAnalysisText(Event evt)

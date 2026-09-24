@@ -1,42 +1,29 @@
-using System.Text;
-using System.Text.Json;
-using SponsorPulse.Application.Common.Config;
+using System.Net;
 using SponsorPulse.Application.Common.Interfaces;
 using SponsorPulse.Application.Common.Models;
 using SponsorPulse.Domain.Models;
 
 namespace SponsorPulse.Application.Services;
 
-public class StorytellingService(IHttpClientFactory httpClientFactory, LlmSettings llmSettings)
-    : IStorytellingService
+public sealed class StorytellingService(
+    IEventDataExtractor eventDataExtractor,
+    ILlmApiClient llmApiClient
+) : IStorytellingService
 {
-    private readonly HttpClient _httpClient = httpClientFactory.CreateClient();
-    private readonly string _llmUrl = llmSettings.Url;
-    private readonly string _apiKey = llmSettings.ApiKey;
+    private const string EventNotFoundMessage = "L'événement demandé est introuvable.";
 
-    public async Task<StorytellingReponse> GenerateStorytellingAsync(StorytellingRequest request)
+    public async Task<ApiCallResponse<StorytellingReponse>> GenerateStorytellingAsync(
+        string slug,
+        CancellationToken cancellationToken = default
+    )
     {
-        try
-        {
-            // Prepare request body
-            var json = JsonSerializer.Serialize(request);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var eventData = await eventDataExtractor.ExtractAsync(slug, cancellationToken);
 
-            // Add API key to headers
-            _httpClient.DefaultRequestHeaders.Add("Authorization", "Bearer " + _apiKey);
-
-            // Send request to LLM
-            var response = await _httpClient.PostAsync(_llmUrl, content);
-            response.EnsureSuccessStatusCode();
-
-            // Parse response
-            var responseJson = await response.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<StorytellingReponse>(responseJson);
-        }
-        catch (Exception ex)
-        {
-            // Log error and return empty response or throw
-            return new StorytellingReponse { Slides = [] };
-        }
+        return eventData is null
+            ? ApiCallResponse<StorytellingReponse>.Failed(
+                HttpStatusCode.NotFound,
+                EventNotFoundMessage
+            )
+            : await llmApiClient.GenerateAsync(eventData, cancellationToken);
     }
 }

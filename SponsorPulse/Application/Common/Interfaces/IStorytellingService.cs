@@ -13,5 +13,8 @@ public interface IStorytellingService
     /// </summary>
     /// <param name="request">Les données brutes Twitter et Twitch à analyser.</param>
     /// <returns>La réponse structurée contenant les slides de storytelling.</returns>
-    Task<StorytellingReponse> GenerateStorytellingAsync(StorytellingRequest request);
+    Task<ApiCallResponse<StorytellingReponse>> GenerateStorytellingAsync(
+        string slug,
+        CancellationToken cancellationToken = default
+    );
 }

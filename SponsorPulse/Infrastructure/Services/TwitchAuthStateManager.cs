@@ -13,7 +13,7 @@ public class TwitchAuthStateManager(
     ILogger<TwitchAuthStateManager> logger,
     IHttpClientFactory httpFactory,
     IConfiguration configuration
-    ) : ITwitchAuthStateService
+) : ITwitchAuthStateService
 {
     private readonly IMemoryCache _memoryCache = memoryCache;
     private readonly IDbContextFactory<SponsorPulseDbContext> _dbFactory = dbFactory;
@@ -26,7 +26,7 @@ public class TwitchAuthStateManager(
     {
         var state = Guid.NewGuid().ToString("N");
         var token = new TwitchAuthToken { State = state, CreatedAt = DateTimeOffset.UtcNow };
-        
+
         await PersistTokenAsync(token);
 
         return state;
@@ -52,7 +52,9 @@ public class TwitchAuthStateManager(
     {
         using var dbContext = _dbFactory.CreateDbContext();
 
-        return await dbContext.TwitchAuthTokens.FirstOrDefaultAsync(t => t.TwitchUserId == twitchUserId);
+        return await dbContext.TwitchAuthTokens.FirstOrDefaultAsync(t =>
+            t.TwitchUserId == twitchUserId
+        );
     }
 
     public async Task<string?> GetValidAccessTokenAsync(string twitchUserId)
@@ -115,6 +117,16 @@ public class TwitchAuthStateManager(
         }
     }
 
+    public async Task<string?> GetValidAccessTokenForUserAsync(Guid userId)
+    {
+        using var dbContext = _dbFactory.CreateDbContext();
+        var token = await dbContext.TwitchAuthTokens.SingleOrDefaultAsync(t => t.UserId == userId);
+
+        return token?.TwitchUserId is null
+            ? null
+            : await GetValidAccessTokenAsync(token.TwitchUserId);
+    }
+
     public async Task<List<TwitchAuthToken>> ListAllAsync()
     {
         using var dbContext = _dbFactory.CreateDbContext();
@@ -155,7 +167,7 @@ public class TwitchAuthStateManager(
             existing.UserId = linkedAccount.UserId;
 
             dbContext.LinkedAccounts.Update(existing);
-            
+
             linkedAccount = existing;
         }
         else
@@ -199,7 +211,9 @@ public class TwitchAuthStateManager(
     private async Task PersistTokenAsync(TwitchAuthToken token)
     {
         using var dbContext = _dbFactory.CreateDbContext();
-        var existing = await dbContext.TwitchAuthTokens.FirstOrDefaultAsync(t => t.State == token.State);
+        var existing = await dbContext.TwitchAuthTokens.FirstOrDefaultAsync(t =>
+            t.State == token.State
+        );
 
         if (existing is not null)
         {

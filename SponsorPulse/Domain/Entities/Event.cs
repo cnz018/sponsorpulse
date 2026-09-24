@@ -19,7 +19,7 @@ public record Event(
     string Description,
     DateTime Date,
     string StreamPlatform,
-    string ChannelId,
+    string BroadcasterId,
     string Slug
 )
 {
@@ -53,12 +53,20 @@ public record Event(
         string description,
         DateTime date,
         string platform,
-        string channelId
+        string broadcasterId
     )
     {
         // Utilisation de GUID v7 pour des IDs triables chronologiquement
         var slug = GenerateSlug();
-        return new Event(Guid.CreateVersion7(), name, description, date, platform, channelId, slug);
+        return new Event(
+            Guid.CreateVersion7(),
+            name,
+            description,
+            date,
+            platform,
+            broadcasterId,
+            slug
+        );
     }
 
     private static string GenerateSlug()

@@ -26,6 +26,7 @@ public static class InfrastructureDependencyInjection
         services.AddScoped<ISocialMediaAnalyticsService, SocialMediaAnalyticsService>();
         services.AddScoped<ISocialPostRepository, SocialPostRepository>();
         services.AddScoped<IStaticReportService, StaticReportService>();
+        services.AddScoped<ILinkedAccountManager, LinkedAccountManager>();
 
         // Demo Mode Configuration
         services.AddOptions<DemoModeSettings>().Bind(configuration.GetSection("DemoMode"));
@@ -37,6 +38,8 @@ public static class InfrastructureDependencyInjection
         services
             .AddOptions<ValueCalculatorSettings>()
             .Bind(configuration.GetSection("ValueCalculator"));
+
+        services.AddOptions<ReportSettings>().Bind(configuration.GetSection("ReportSettings"));
 
         // Application Services
         services.AddScoped<IDemoDataService, DemoDataService>();
@@ -55,9 +58,22 @@ public static class InfrastructureDependencyInjection
 
         // LLM Configuration
         services.Configure<LlmSettings>(configuration.GetSection("LlmSettings"));
+        services.AddSingleton(serviceProvider =>
+            serviceProvider
+                .GetRequiredService<Microsoft.Extensions.Options.IOptions<LlmSettings>>()
+                .Value
+        );
 
         // Storytelling Service
-        //services.AddScoped<IStorytellingService, StorytellingService>();
+        services.AddScoped<IEventDataExtractor, EventDataExtractor>();
+        services.AddHttpClient<ILlmApiClient, LlmApiClient>(
+            (serviceProvider, client) =>
+            {
+                var settings = serviceProvider.GetRequiredService<LlmSettings>();
+                client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
+            }
+        );
+        services.AddScoped<IStorytellingService, StorytellingService>();
 
         return services;
     }

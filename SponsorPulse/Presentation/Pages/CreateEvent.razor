@@ -75,12 +75,13 @@
                 </div>
 
                 <div class="mb-8">
-                    <label class="form-label" for="channel">ID de la chaîne / URL</label>
+                    <label class="form-label" for="broadcaster-id">Broadcaster ID Twitch</label>
                     <div class="relative">
-                        <InputText id="channel" class="sp-input" @bind-Value="command.ChannelId" placeholder="ex: gotaga" />
+                        <span class="sp-input-prefix">https://twitch.tv/</span>
+                        <InputText id="broadcaster-id" class="sp-input sp-input-with-prefix" @bind-Value="command.BroadcasterId" placeholder="ex: wade971" />
                     </div>
-                    <ValidationMessage For="@(() => command.ChannelId)" />
-                    <p class="text-xs text-gray-500 mt-2">Nous utiliserons cet ID pour récupérer les statistiques du stream.
+                    <ValidationMessage For="@(() => command.BroadcasterId)" />
+                    <p class="text-xs text-gray-500 mt-2">Saisissez l'identifiant Twitch de la chaîne présente dans l'URL.
                     </p>
                 </div>
 
@@ -239,6 +240,20 @@
         .text-xs {
             font-size: 0.75rem;
         }
+
+        .sp-input-prefix {
+            position: absolute;
+            left: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--grey-text);
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .sp-input-with-prefix {
+            padding-left: 9.5rem;
+        }
     </style>
 
 @code {
@@ -266,7 +281,7 @@
             command.Description,
             DateTime.SpecifyKind(eventDateLocal, DateTimeKind.Local).ToUniversalTime(),
             command.StreamPlatform,
-            command.ChannelId
+            command.BroadcasterId
         );
 
         newEvent.StartedAt = DateTime.SpecifyKind(startedAtLocal, DateTimeKind.Local).ToUniversalTime();

@@ -35,9 +35,9 @@ IConfiguration configuration)
     [Function("TwitchTrackerFunction")]
     public async Task Run([TimerTrigger("0 */5 * * * *")] TimerInfo myTimer)
     {
-        string targetChannel = configuration["Twitch_TargetChannel"] ?? "kenBogard";
+        string broadcasterId = configuration["Twitch_TargetChannel"] ?? "kenBogard";
 
-        _logger.LogInformation("[TwitchTracker] Analyse du live pour : {Channel}", targetChannel);
+        _logger.LogInformation("[TwitchTracker] Analyse du live pour le broadcaster : {BroadcasterId}", broadcasterId);
 
         try
         {
@@ -45,7 +45,7 @@ IConfiguration configuration)
             IPlatformTrackingStrategy strategy = _strategyResolver.GetStrategy(CurrentPlatform);
 
             // 2. Capture des métriques via la stratégie résolue
-            var resultObject = await strategy.CaptureAsync(targetChannel);
+            var resultObject = await strategy.CaptureAsync(broadcasterId);
 
             if (resultObject is Result<TwitchMetrics> result && result.IsSuccess && result.Value is not null)
             {
@@ -53,7 +53,7 @@ IConfiguration configuration)
 
                 var snapshot = new TwitchStreamSnapshot
                 {
-                    ChannelName = targetChannel,
+                    ChannelName = broadcasterId,
                     ViewerCount = metrics.ViewerCount,
                     GameName = "Non spécifié",
                     CapturedAt = DateTimeOffset.UtcNow
@@ -68,7 +68,7 @@ IConfiguration configuration)
             }
             else
             {
-                _logger.LogWarning("Impossible d'obtenir les métriques live pour {Channel}.", targetChannel);
+                _logger.LogWarning("Impossible d'obtenir les métriques live pour {BroadcasterId}.", broadcasterId);
             }
         }
         catch (Exception ex)
