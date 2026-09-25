@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using QuestPDF.Infrastructure;
 using SponsorPulse.Domain.Entities;
 using SponsorPulse.Infrastructure.Api.Extensions;
 using SponsorPulse.Infrastructure.DependencyInjection;
@@ -19,6 +20,8 @@ using SponsorPulse.Presentation.Services;
 SQLitePCL.Batteries_V2.Init();
 
 var builder = WebApplication.CreateBuilder(args);
+
+QuestPDF.Settings.License = LicenseType.Community;
 
 // Configure Logging
 builder.Logging.AddDebug();

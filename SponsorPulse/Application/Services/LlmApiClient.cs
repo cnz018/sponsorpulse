@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using SponsorPulse.Application.Common.Config;
 using SponsorPulse.Application.Common.Interfaces;
 using SponsorPulse.Application.Common.Models;
@@ -10,7 +11,15 @@ namespace SponsorPulse.Application.Services;
 
 public sealed class LlmApiClient(HttpClient httpClient, LlmSettings llmSettings) : ILlmApiClient
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const string SlideTypeInstruction =
+        " Chaque slide doit contenir le champ Type. Type doit être une valeur parmi "
+        + "ExecutiveSummary, StreamMetrics, SocialNetworkMetrics, TwitchTwitterSynergy, "
+        + "SponsorValue, EventSummary ou Recommendations.";
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
 
     public async Task<ApiCallResponse<StorytellingReponse>> GenerateAsync(
         EventRawData data,
@@ -47,9 +56,11 @@ public sealed class LlmApiClient(HttpClient httpClient, LlmSettings llmSettings)
         var requestPayload = new
         {
             model = llmSettings.Model,
-            instructions = string.IsNullOrWhiteSpace(llmSettings.CompactSystemPrompt)
-                ? llmSettings.SystemPrompt
-                : llmSettings.CompactSystemPrompt,
+            instructions = (
+                string.IsNullOrWhiteSpace(llmSettings.CompactSystemPrompt)
+                    ? llmSettings.SystemPrompt
+                    : llmSettings.CompactSystemPrompt
+            ) + SlideTypeInstruction,
             input = JsonSerializer.Serialize(BuildPromptPayload(data), JsonOptions),
             max_output_tokens = llmSettings.MaxTokens,
             reasoning = new { effort = llmSettings.ReasoningEffort },

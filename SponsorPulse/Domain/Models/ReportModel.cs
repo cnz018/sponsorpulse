@@ -13,8 +13,12 @@ public record ReportModel
 
     // Données de l'événement
     public string EventName { get; init; } = string.Empty;
+    public string EventDescription { get; init; } = string.Empty;
     public DateTime EventDate { get; init; }
     public string EventPlatform { get; init; } = string.Empty;
+    public bool HasViewerCount { get; init; }
+    public bool HasPeakViewers { get; init; }
+    public bool HasStreamDuration { get; init; }
 
     // Metrics
     public TwitchMetrics? TwitchMetrics { get; init; }

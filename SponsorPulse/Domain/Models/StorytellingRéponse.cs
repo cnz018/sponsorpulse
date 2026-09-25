@@ -1,5 +1,7 @@
 namespace SponsorPulse.Domain.Models;
 
+using SponsorPulse.Domain.Enums;
+
 /// <summary>
 /// Réponse du service de storytelling contenant une liste de slides pour le PDF
 /// </summary>
@@ -15,6 +17,11 @@ public record StorytellingReponse
     /// </summary>
     public record Slide
     {
+        /// <summary>
+        /// Type fonctionnel de la slide utilisé pour son rendu dans le rapport.
+        /// </summary>
+        public StorytellingSlideType Type { get; init; } = StorytellingSlideType.Unknown;
+
         /// <summary>
         /// Titre de la slide
         /// </summary>

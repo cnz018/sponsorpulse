@@ -2,6 +2,8 @@ namespace SponsorPulse.Application.Services;
 
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using QuestPDF.Fluent;
+using SponsorPulse.Application.Services.Pdf;
 using SponsorPulse.Domain.Entities;
 using SponsorPulse.Domain.Models;
 using SponsorPulse.Infrastructure.Persistence;
@@ -30,12 +32,15 @@ public record PdfGenerationResult(
 public class PdfGenerationService : IPdfGenerationService
 {
     private readonly IDbContextFactory<SponsorPulseAnalyticsDbContext> _analyticsDbFactory;
+    private readonly HttpClient _httpClient;
 
     public PdfGenerationService(
-        IDbContextFactory<SponsorPulseAnalyticsDbContext> analyticsDbFactory
+        IDbContextFactory<SponsorPulseAnalyticsDbContext> analyticsDbFactory,
+        HttpClient httpClient
     )
     {
         _analyticsDbFactory = analyticsDbFactory;
+        _httpClient = httpClient;
     }
 
     public async Task<PdfGenerationResult> GeneratePdfAsync(
@@ -45,9 +50,10 @@ public class PdfGenerationService : IPdfGenerationService
     {
         try
         {
-            var html = await GetPdfPreviewHtmlAsync(@event, options);
+            var reportModel = await BuildReportModelAsync(@event, options);
+            var images = await LoadImagesAsync(reportModel);
+            var pdfBytes = new QuestPdfReportDocument(reportModel, images).GeneratePdf();
 
-            var pdfBytes = System.Text.Encoding.UTF8.GetBytes(html);
             return new PdfGenerationResult(
                 Success: true,
                 PdfBytes: pdfBytes,
@@ -141,6 +147,22 @@ public class PdfGenerationService : IPdfGenerationService
         PdfCustomizationOptions options
     )
     {
+        var storytellingSlides = await GetStorytellingSlidesAsync(@event);
+        var storytellingText = string.Join(
+            Environment.NewLine + Environment.NewLine,
+            storytellingSlides
+                .Where(slide => !string.IsNullOrWhiteSpace(slide.Contenu))
+                .Select(slide => $"{slide.Titre}\n{slide.Contenu}")
+        );
+        var recommendationSlides = storytellingSlides
+            .Where(slide =>
+                slide.Titre.Contains("recommand", StringComparison.OrdinalIgnoreCase)
+                || slide.Titre.Contains("enseignement", StringComparison.OrdinalIgnoreCase)
+                || slide.Titre.Contains("action", StringComparison.OrdinalIgnoreCase)
+            )
+            .Select(slide => $"{slide.Titre}: {slide.Contenu}")
+            .ToList();
+
         return new ReportModel
         {
             CompanyName = options.CompanyName,
@@ -148,8 +170,12 @@ public class PdfGenerationService : IPdfGenerationService
             PrimaryColor = options.PrimaryColor,
             SecondaryColor = options.SecondaryColor,
             EventName = @event.Name,
+            EventDescription = @event.Description,
             EventDate = @event.Date,
             EventPlatform = @event.StreamPlatform,
+            HasViewerCount = @event.ViewerCount.HasValue,
+            HasPeakViewers = @event.PeakViewers.HasValue,
+            HasStreamDuration = @event.StreamDuration.HasValue,
             TwitchMetrics = new TwitchMetrics
             {
                 ViewerCount = @event.ViewerCount ?? 0,
@@ -163,13 +189,39 @@ public class PdfGenerationService : IPdfGenerationService
                 GameName = @event.GameName ?? "N/A",
             },
             TwitterAnalytics = @event.TwitterAnalytics,
-            StorytellingText = string.Empty,
-            StorytellingSlides = await GetStorytellingSlidesAsync(@event),
-            AnalysisText = GenerateAnalysisText(@event),
-            OpportunitiesMissed = GenerateOpportunitiesMissed(@event),
-            Suggestions = GenerateSuggestions(@event),
+            StorytellingText = storytellingText,
+            StorytellingSlides = storytellingSlides,
+            AnalysisText = storytellingText,
+            OpportunitiesMissed = recommendationSlides,
+            Suggestions = recommendationSlides,
             PhotoUrls = @event.Media.Select(m => m.Url).Take(5).ToList(),
         };
+    }
+
+    private async Task<IReadOnlyDictionary<string, byte[]>> LoadImagesAsync(ReportModel model)
+    {
+        var urls = model
+            .StorytellingSlides.Select(slide => slide.ImageUrl)
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .Select(url => url!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var images = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var url in urls)
+        {
+            try
+            {
+                if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                    images[url] = await _httpClient.GetByteArrayAsync(uri);
+            }
+            catch (HttpRequestException)
+            {
+                // An unavailable optional image must not prevent PDF generation.
+            }
+        }
+
+        return images;
     }
 
     private async Task<List<StorytellingReponse.Slide>> GetStorytellingSlidesAsync(Event @event)
@@ -183,81 +235,5 @@ public class PdfGenerationService : IPdfGenerationService
 
         return JsonSerializer.Deserialize<StorytellingReponse>(analysis.ResponseJson)?.Slides
             ?? new List<StorytellingReponse.Slide>();
-    }
-
-    private string GenerateAnalysisText(Event evt)
-    {
-        var sb = new System.Text.StringBuilder();
-
-        sb.Append(
-            $"Cet événement a confirmé le potentiel du sponsoring eSport comme levier de visibilité. "
-        );
-        sb.Append($"Les metrics Twitch montrent une audience fidèle et engagée. ");
-
-        if (evt.PeakViewers > evt.ViewerCount * 1.5)
-        {
-            sb.Append(
-                $"Le pic d'audience à {evt.PeakViewers:N0} viewers indique des moments forts ayant captivé l'attention. "
-            );
-        }
-
-        if (evt.TwitterAnalytics != null)
-        {
-            sb.Append(
-                $"L'impact Twitter démontre une résonance au-delà du live, avec un multiplicateur viral de {evt.TwitterAnalytics.ViralMultiplier:F2}x."
-            );
-        }
-
-        return sb.ToString();
-    }
-
-    private List<string> GenerateOpportunitiesMissed(Event evt)
-    {
-        var opportunities = new List<string>();
-
-        if (evt.ViewerCount < evt.PeakViewers * 0.7)
-        {
-            opportunities.Add(
-                "Rétention audience : Optimiser le contenu pendant les creux d'audience"
-            );
-        }
-
-        if (evt.TwitterAnalytics != null && evt.TwitterAnalytics.TotalTweets < 1000)
-        {
-            opportunities.Add(
-                "Engagement Twitter : Stimuler les conversations avec des hashtags dédiés"
-            );
-        }
-
-        if (evt.StreamDuration < TimeSpan.FromHours(4))
-        {
-            opportunities.Add(
-                "Durée de stream : Étendre le temps d'antenne pour maximiser l'exposition"
-            );
-        }
-
-        if (!opportunities.Any())
-        {
-            opportunities.Add(
-                "Aucune opportunité majeure identifiée - performance globale excellente"
-            );
-        }
-
-        return opportunities;
-    }
-
-    private List<string> GenerateSuggestions(Event evt)
-    {
-        var secondaryPlatform =
-            evt.StreamPlatform == "Twitch" ? "YouTube Gaming et TikTok" : "Twitch";
-
-        return new List<string>
-        {
-            "Intégrer des activations interactives pendant le stream (sondages, giveaways)",
-            "Développer un contenu behind-the-scenes pour prolonger l'engagement post-événement",
-            "Créer un programme d'ambassadeurs parmi les influenceurs les plus engagés",
-            $"Explorer {secondaryPlatform} pour une présence multi-plateformes",
-            "Mettre en place un tracking en temps réel pour optimiser les décisions pendant l'événement",
-        };
     }
 }
