@@ -252,6 +252,18 @@ public sealed class LlmApiClient(HttpClient httpClient, LlmSettings llmSettings)
                 foreach (var item in output.EnumerateArray())
                 {
                     if (
+                        !item.TryGetProperty("type", out var itemType)
+                        || !string.Equals(
+                            itemType.GetString(),
+                            "message",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    if (
                         !item.TryGetProperty("content", out var content)
                         || content.ValueKind != JsonValueKind.Array
                     )
@@ -259,6 +271,18 @@ public sealed class LlmApiClient(HttpClient httpClient, LlmSettings llmSettings)
 
                     foreach (var contentItem in content.EnumerateArray())
                     {
+                        if (
+                            !contentItem.TryGetProperty("type", out var contentType)
+                            || !string.Equals(
+                                contentType.GetString(),
+                                "output_text",
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        )
+                        {
+                            continue;
+                        }
+
                         if (
                             contentItem.TryGetProperty("text", out var text)
                             && text.ValueKind == JsonValueKind.String
