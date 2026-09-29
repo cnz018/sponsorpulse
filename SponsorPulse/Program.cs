@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using QuestPDF.Infrastructure;
 using SponsorPulse.Domain.Entities;
+using SponsorPulse.Application.Services;
 using SponsorPulse.Infrastructure.Api.Extensions;
 using SponsorPulse.Infrastructure.DependencyInjection;
 using SponsorPulse.Infrastructure.Persistence;
@@ -47,6 +48,7 @@ builder
 
 // Register Presigned URL API Service
 builder.Services.AddScoped<PresignedUrlApiService>();
+builder.Services.AddSingleton<TwitchMetricCalculator>();
 
 // Database Context
 var connectionString =

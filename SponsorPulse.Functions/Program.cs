@@ -54,9 +54,15 @@ builder.Services.AddDbContextFactory<SponsorPulseAnalyticsDbContext>(options =>
 builder.Services.AddScoped<ILinkedAccountManager, LinkedAccountManager>();
 builder.Services.AddScoped<ITwitchAuthStateService, TwitchAuthStateService>();
 
-builder.Services.AddHttpClient<TwitchTrackingStrategy>();
-
-builder.Services.AddTransient<IPlatformTrackingStrategy, TwitchTrackingStrategy>();
+builder.Services.AddSingleton<TwitchAppTokenProvider>();
+builder.Services.AddTransient<TwitchAuthenticationHandler>();
+builder.Services.AddHttpClient("TwitchOAuth");
+builder
+    .Services.AddHttpClient<TwitchTrackingStrategy>()
+    .AddHttpMessageHandler<TwitchAuthenticationHandler>();
+builder.Services.AddTransient<IPlatformTrackingStrategy>(serviceProvider =>
+    serviceProvider.GetRequiredService<TwitchTrackingStrategy>()
+);
 
 builder.Services.AddTransient<
     IPlatformTrackingStrategyResolver,

@@ -2,6 +2,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode RenderMode.InteractiveServer
 @using SponsorPulse.Domain.Entities
+@using SponsorPulse.Domain.Primitives
 @using SponsorPulse.Infrastructure.Repositories
 @using SponsorPulse.Application.Services
 @using SponsorPulse.Application.Common.Models
@@ -325,7 +326,7 @@
                                     @(currentEvent?.Name ?? "Rapport d'Événement")
                                 </div>
                                 <div style="font-size: 0.875rem; color: #64748B; line-height: 1.6;">
-                                    <p><strong>Date:</strong> @currentEvent?.Date.ToLocalTime().ToString("yyyy-MM-dd")</p>
+                                    <p><strong>Date:</strong> @(currentEvent is null ? "" : DateHelper.ToLocal(currentEvent.Date).ToString("yyyy-MM-dd"))</p>
                                     <p><strong>Viewers:</strong> @(currentEvent?.ViewerCount.ToString() ?? "N/A")</p>
                                     <p><strong>Durée:</strong> @FormatDuration(currentEvent?.StreamDuration)</p>
                                 </div>

@@ -33,6 +33,11 @@ public class TwitchStreamSnapshot
     public int PeakViewerCount { get; set; }
 
     /// <summary>
+    /// Heure réelle de début du stream communiquée par Twitch.
+    /// </summary>
+    public DateTimeOffset? StreamStartedAt { get; set; }
+
+    /// <summary>
     /// Nom du jeu ou de la catégorie (ex: 'Just Chatting', 'League of Legends').
     /// </summary>
     public string GameName { get; set; } = string.Empty;

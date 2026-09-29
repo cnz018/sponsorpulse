@@ -48,6 +48,7 @@ public record ConversionMetrics(
 public record TwitchMetrics
 {
     public int ViewerCount { get; init; }
+    public bool IsLive { get; init; } = true;
     public int PeakViewers { get; init; }
     public int UniqueViewers { get; init; }
     public TimeSpan StreamDuration { get; init; }
@@ -63,9 +64,18 @@ public record TwitchMetrics
     public decimal EstimatedROI { get; init; }
     public decimal CPM { get; init; }
 
-public static TwitchMetrics Empty => new();
-    public static TwitchMetrics Create() => new ();
-    public static TwitchMetrics Create(int viewerCount, int peakViewers, int uniqueViewers, TimeSpan streamDuration, DateTimeOffset startedAt, string gameName) =>
+    public static TwitchMetrics Empty => new() { IsLive = false };
+
+    public static TwitchMetrics Create() => new();
+
+    public static TwitchMetrics Create(
+        int viewerCount,
+        int peakViewers,
+        int uniqueViewers,
+        TimeSpan streamDuration,
+        DateTimeOffset startedAt,
+        string gameName
+    ) =>
         new()
         {
             ViewerCount = viewerCount,
@@ -73,6 +83,6 @@ public static TwitchMetrics Empty => new();
             UniqueViewers = uniqueViewers,
             StreamDuration = streamDuration,
             StartedAt = startedAt,
-            GameName = gameName
+            GameName = gameName,
         };
 }

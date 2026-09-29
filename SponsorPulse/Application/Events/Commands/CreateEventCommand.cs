@@ -1,13 +1,13 @@
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
+using SponsorPulse.Domain.Primitives;
 
 namespace SponsorPulse.Application.Events.Commands;
 
 public class CreateEventCommand : IValidatableObject
 {
-    private static readonly DateTime DefaultEventDate = TimeProvider
-        .System.GetUtcNow()
-        .ToLocalTime()
+    private static readonly DateTime DefaultEventDate = DateHelper
+        .ToLocal(TimeProvider.System.GetUtcNow())
         .DateTime.Date;
 
     [Required(ErrorMessage = "Le nom de l'événement est obligatoire.")]
@@ -22,7 +22,7 @@ public class CreateEventCommand : IValidatableObject
 
     [Required(ErrorMessage = "L'heure de démarrage est obligatoire.")]
     public TimeOnly? StartedAtTime { get; set; } =
-        TimeOnly.FromDateTime(TimeProvider.System.GetUtcNow().ToLocalTime().DateTime);
+        TimeOnly.FromDateTime(DateHelper.ToLocal(TimeProvider.System.GetUtcNow()).DateTime);
 
     [Required(ErrorMessage = "Veuillez sélectionner une plateforme.")]
     public string StreamPlatform { get; set; } = "Twitch";
@@ -41,7 +41,7 @@ public class CreateEventCommand : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        var localToday = TimeProvider.System.GetUtcNow().ToLocalTime().Date;
+        var localToday = DateHelper.ToLocal(TimeProvider.System.GetUtcNow()).Date;
 
         if (Date.HasValue && Date.Value.Date < localToday)
         {

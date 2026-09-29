@@ -157,8 +157,7 @@ public static class TwitchWebhookExtensions
                 // On cherche un événement "Planifié" pour ce streamer spécifique
                 using var dbContext = await dbFactory.CreateDbContextAsync();
                 var candidateEvents = await dbContext
-                    .Events
-                    .AsSplitQuery()
+                    .Events.AsSplitQuery()
                     .Include(e => e.Owner)
                     .Include(e => e.Owner.LinkedAccounts)
                     .SelectMany(
@@ -167,7 +166,10 @@ public static class TwitchWebhookExtensions
                     )
                     .Where(e =>
                         e.Event.StartedAt.HasValue
-                        && e.Event.StartedAt.Value.Date.CompareTo(streamEvent.StartedAt.Date) == 0
+                        && e.Event.StartedAt.Value
+                            >= streamEvent.StartedAt.AddMinutes(-toleranceMinutes)
+                        && e.Event.StartedAt.Value
+                            <= streamEvent.StartedAt.AddMinutes(toleranceMinutes)
                         && e.LinkedAccount.PlatformUserId == streamEvent.BroadcasterUserId
                         && e.Event.Status == EventStatus.Scheduled
                     )

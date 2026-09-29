@@ -66,16 +66,11 @@ public sealed class LinkedAccountManager(
 
         if (string.IsNullOrWhiteSpace(account.RefreshToken))
         {
-            if (string.IsNullOrWhiteSpace(account.AccessToken))
-            {
-                return null;
-            }
-
             _logger.LogWarning(
                 "Twitch token for user {UserId} is expired and has no refresh token.",
                 userId
             );
-            return account.AccessToken;
+            return GetUnexpiredAccessToken(account);
         }
 
         var clientId = _configuration["Twitch:ClientId"] ?? _configuration["Twitch_ClientId"];
@@ -85,7 +80,7 @@ public sealed class LinkedAccountManager(
         if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
         {
             _logger.LogError("Twitch client credentials are missing; token refresh skipped.");
-            return account.AccessToken;
+            return GetUnexpiredAccessToken(account);
         }
 
         try
@@ -113,7 +108,7 @@ public sealed class LinkedAccountManager(
                     userId,
                     response.StatusCode
                 );
-                return account.AccessToken;
+                return GetUnexpiredAccessToken(account);
             }
 
             var token = await response.Content.ReadFromJsonAsync<TwitchRefreshTokenResponse>();
@@ -124,7 +119,7 @@ public sealed class LinkedAccountManager(
                     "Twitch returned an invalid refreshed token for user {UserId}.",
                     userId
                 );
-                return account.AccessToken;
+                return GetUnexpiredAccessToken(account);
             }
 
             using var dbContext = _dbContextFactory.CreateDbContext();
@@ -134,7 +129,7 @@ public sealed class LinkedAccountManager(
 
             if (storedAccount is null)
             {
-                return account.AccessToken;
+                return GetUnexpiredAccessToken(account);
             }
 
             storedAccount.AccessToken = token.AccessToken;
@@ -147,7 +142,7 @@ public sealed class LinkedAccountManager(
         catch (Exception exception)
         {
             _logger.LogError(exception, "Twitch token refresh failed for user {UserId}.", userId);
-            return account.AccessToken;
+            return GetUnexpiredAccessToken(account);
         }
     }
 
@@ -168,6 +163,12 @@ public sealed class LinkedAccountManager(
 
         return true;
     }
+
+    private static string? GetUnexpiredAccessToken(LinkedAccount account) =>
+        !string.IsNullOrWhiteSpace(account.AccessToken)
+        && (!account.TokenExpiresAt.HasValue || account.TokenExpiresAt.Value > DateTime.UtcNow)
+            ? account.AccessToken
+            : null;
 
     private sealed record TwitchRefreshTokenResponse(
         [property: JsonPropertyName("access_token")] string AccessToken,

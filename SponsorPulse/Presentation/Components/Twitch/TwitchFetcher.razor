@@ -3,18 +3,26 @@
 @using System.Text.Json
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
 @using SponsorPulse.Application.Common.Interfaces
+@using SponsorPulse.Application.Services
 @using SponsorPulse.Domain.Entities
 @using SponsorPulse.Domain.Models
+@using SponsorPulse.Domain.Models.Twitch
+@using SponsorPulse.Domain.Primitives
+@using SponsorPulse.Infrastructure.Persistence
 @inject ITwitchService TwitchService
 @inject ILogger<TwitchFetcher> Logger
 @inject HttpClient Http
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IDbContextFactory<SponsorPulseAnalyticsDbContext> AnalyticsDbFactory
+@inject TwitchMetricCalculator MetricCalculator
 
 <div class="twitch-fetcher mb-8">
     <div class="flex items-center gap-4 mb-4">
         <div class="flex-grow">
             <label class="block text-gray-400 text-xs uppercase font-bold mb-2">Broadcaster ID Twitch</label>
+            <div class="tracking-status" aria-live="polite">@GetStatusLabel(EventToUpdate.Status)</div>
             <div class="flex gap-2">
                 <input type="text" class="sp-input flex-grow" disabled value="@EventToUpdate.BroadcasterId" />
 
@@ -65,7 +73,7 @@
                     </div>
                     <div>
                         <label class="form-label block text-gray-400 text-xs uppercase font-bold mb-2">Date début</label>
-                        <input type="datetime-local" class="sp-input" @bind="EventToUpdate.StartedAt" />
+                        <input type="datetime-local" class="sp-input" @bind="StartedAtLocal" />
                     </div>
                     <div class="col-span-2">
                         <label class="form-label block text-gray-400 text-xs uppercase font-bold mb-2">Jeu</label>
@@ -94,7 +102,7 @@
                     <div>
                         <span class="text-gray-400 block text-xs">Durée</span>
                         <span class="text-white font-mono">@(EventToUpdate.StreamDuration?.ToString(@"hh\:mm") ??
-                                                                                                                                                                                                                                                                                                            "--:--")</span>
+                                                                                                                                                                                                                                                                                                                                                                    "--:--")</span>
                         </div>
                     </div>
                 </div>
@@ -155,46 +163,100 @@
             }
 
             .manual-toggle {
-                margin-left: 0.5rem;
-                background: rgba(255, 255, 255, 0.1);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                min-width: 100px;
-            }
-
-            .manual-toggle:hover:not(:disabled) {
-                background: rgba(255, 255, 255, 0.2);
-            }
-
-            .glass-alert {
-                padding: 1rem;
-                border-radius: 8px;
-                display: flex;
-                align-items: center;
-                gap: 0.5rem;
-            }
-
-            .glass-alert.error {
-                background: rgba(239, 68, 68, 0.1);
-                border: 1px solid rgba(239, 68, 68, 0.2);
-                color: #FCA5A5;
-            }
-
-            @@keyframes spin {
-                to {
-                    transform: rotate(360deg);
+                .tracking-status {
+                    min-height: 1.25rem;
+                    margin-bottom: 0.35rem;
+                    color: #9CA3AF;
+                    font-size: 0.75rem;
                 }
-            }
+
+                .manual-toggle {
+                    margin-left: 0.5rem;
+                    background: rgba(255, 255, 255, 0.1);
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    min-width: 100px;
+                }
+
+                .manual-toggle:hover:not(:disabled) {
+                    background: rgba(255, 255, 255, 0.2);
+                }
+
+                .glass-alert {
+                    padding: 1rem;
+                    border-radius: 8px;
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                }
+
+                .glass-alert.error {
+                    background: rgba(239, 68, 68, 0.1);
+                    border: 1px solid rgba(239, 68, 68, 0.2);
+                    color: #FCA5A5;
+                }
+
+                @@keyframes spin {
+                    to {
+                        transform: rotate(360deg);
+                    }
+                }
         </style>
 
 @code {
     [Parameter] public Event EventToUpdate { get; set; } = default!;
     [Parameter] public EventCallback<Event> OnDataUpdated { get; set; }
+    [Parameter] public EventCallback<Event> OnStatusChanged { get; set; }
 
     private bool IsLoading = false;
     private bool ShowManualInput = false;
     private string? ErrorMessage;
     // Adresse locale par défaut de l'Azure Function
     private readonly string AzureFunctionBaseUrl = "http://localhost:7075/api";
+    private Guid? _metricsCalculatedForEventId;
+
+    private DateTime? StartedAtLocal
+    {
+        get => EventToUpdate.StartedAt.HasValue
+            ? DateHelper.ToLocal(EventToUpdate.StartedAt.Value)
+            : null;
+        set => EventToUpdate.StartedAt = value.HasValue
+            ? DateHelper.ToUtc(value.Value)
+            : null;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (EventToUpdate.Status != EventStatus.Completed)
+        {
+            _metricsCalculatedForEventId = null;
+            return;
+        }
+
+        if (_metricsCalculatedForEventId == EventToUpdate.Id)
+        {
+            return;
+        }
+
+        await using var analyticsDbContext = await AnalyticsDbFactory.CreateDbContextAsync();
+        var snapshots = await analyticsDbContext
+            .TwitchStreamSnapshots
+            .AsNoTracking()
+            .Where(snapshot => snapshot.EventId == EventToUpdate.Id)
+            .ToListAsync();
+        if (snapshots.Count == 0)
+        {
+            return;
+        }
+
+        var metrics = MetricCalculator.Calculate(snapshots);
+        EventToUpdate.ViewerCount = metrics.ViewerCount;
+        EventToUpdate.PeakViewers = metrics.PeakViewers;
+        EventToUpdate.StreamDuration = metrics.StreamDuration;
+        EventToUpdate.StartedAt = DateHelper.ToUtc(metrics.StartedAt.UtcDateTime);
+        EventToUpdate.GameName = metrics.GameName;
+        _metricsCalculatedForEventId = EventToUpdate.Id;
+        await OnDataUpdated.InvokeAsync(EventToUpdate);
+    }
 
     // Helper for binding TimeSpan to text input
     private string StreamDurationString
@@ -219,14 +281,26 @@
         if (!ShowManualInput) ErrorMessage = null; // Clear error if hiding manual input
     }
 
+    private static string GetStatusLabel(EventStatus status) =>
+        status switch
+        {
+            EventStatus.Scheduled => "Planifié",
+            EventStatus.Fetching => "Collecte en cours...",
+            EventStatus.Live => "En direct",
+            EventStatus.Completed => "Terminé",
+            EventStatus.Error => "Erreur de collecte",
+            _ => string.Empty,
+        };
+
     private async Task FetchData()
     {
         IsLoading = true;
         ErrorMessage = null;
+        var previousStatus = EventToUpdate.Status;
 
         try
         {
-            EventToUpdate.Status = EventStatus.Fetching;
+            await SetStatusAsync(EventStatus.Fetching);
 
             // Appel HTTP POST vers l'Azure Function pour déclencher la collecte et la sauvegarde
             var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
@@ -236,7 +310,7 @@
             if (!Guid.TryParse(userId, out var currentUserId))
             {
                 ErrorMessage = "Utilisateur non authentifié.";
-                EventToUpdate.Status = EventStatus.Error;
+                await SetStatusAsync(EventStatus.Error);
                 return;
             }
 
@@ -244,6 +318,7 @@
             {
                 broadcasterId = EventToUpdate.BroadcasterId,
                 userId = currentUserId,
+                eventId = EventToUpdate.Id,
             });
             var response = await Http.PostAsync(
                 $"{AzureFunctionBaseUrl}/collect/twitch/",
@@ -252,21 +327,27 @@
 
             if (response.IsSuccessStatusCode && response.Content != null)
             {
-                var metrics = await response.Content.ReadFromJsonAsync<TwitchMetrics>() ?? TwitchMetrics.Empty;
-                EventToUpdate.ViewerCount = metrics.ViewerCount;
-                EventToUpdate.PeakViewers = metrics.PeakViewers;
-                EventToUpdate.StreamDuration = metrics.StreamDuration;
-                EventToUpdate.StartedAt = metrics.StartedAt.UtcDateTime;
-                EventToUpdate.GameName = metrics.GameName;
-                EventToUpdate.Status = EventStatus.AnalysisReady;
+                if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+                {
+                    ErrorMessage = "Aucun stream Twitch n'est actuellement en direct.";
+                    await SetStatusAsync(previousStatus);
+                    return;
+                }
 
+                var snapshot = await response.Content.ReadFromJsonAsync<TwitchStreamSnapshot>();
+                if (snapshot is null || snapshot.EventId != EventToUpdate.Id)
+                {
+                    throw new InvalidOperationException("La Function a retourné un snapshot invalide.");
+                }
+
+                await SetStatusAsync(EventStatus.Live);
                 await OnDataUpdated.InvokeAsync(EventToUpdate);
             }
             else
             {
                 ErrorMessage = response.ReasonPhrase ?? "Erreur inconnue lors de l'appel Twitch.";
 
-                EventToUpdate.Status = EventStatus.Error;
+                await SetStatusAsync(EventStatus.Error);
             }
         }
         catch (Exception ex)
@@ -274,7 +355,7 @@
             Logger.LogError(ex, "UI Fetch Error");
 
             ErrorMessage = "Erreur technique: " + ex.Message;
-            EventToUpdate.Status = EventStatus.Error;
+            await SetStatusAsync(EventStatus.Error);
         }
         finally
         {
@@ -285,10 +366,21 @@
     private async Task SaveManualData()
     {
         // Simple manual save trigger
-        EventToUpdate.Status = EventStatus.AnalysisReady;
+        await SetStatusAsync(EventStatus.AnalysisReady);
         // Hide manual input on save
         ShowManualInput = false;
         await OnDataUpdated.InvokeAsync(EventToUpdate);
         ErrorMessage = null; // Clear error on successful manual save
+    }
+
+    private async Task SetStatusAsync(EventStatus status)
+    {
+        if (EventToUpdate.Status == status)
+        {
+            return;
+        }
+
+        EventToUpdate.Status = status;
+        await OnStatusChanged.InvokeAsync(EventToUpdate);
     }
 }

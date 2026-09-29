@@ -70,8 +70,8 @@ public class XpozTwitterStrategy(
                     Query = query,
                     Period = new DateRange
                     {
-                        StartDate = ToUtc(startDate),
-                        EndDate = ToUtc(endDate),
+                        StartDate = DateHelper.ToUtc(startDate, DateTimeKind.Utc),
+                        EndDate = DateHelper.ToUtc(endDate, DateTimeKind.Utc),
                     },
                     TotalCount = response.TotalCount > 0 ? response.TotalCount : posts.Count,
                     Posts = posts,
@@ -608,7 +608,7 @@ public class XpozTwitterStrategy(
             AuthorFollowersCount = tweet.Author.FollowersCount,
             AuthorProfileImageUrl = tweet.Author.ProfileImageUrl,
             ContentText = tweet.Text,
-            CreatedAt = ToUtc(tweet.CreatedAt),
+            CreatedAt = DateHelper.ToUtc(tweet.CreatedAt, DateTimeKind.Utc),
             Url = tweet.Url ?? $"https://twitter.com/{tweet.Author.Username}/status/{tweet.Id}",
             LikesCount = tweet.Metrics.Likes,
             SharesCount = tweet.Metrics.Retweets,
@@ -621,13 +621,5 @@ public class XpozTwitterStrategy(
                 ["Location"] = tweet.Location ?? string.Empty,
                 ["Language"] = tweet.Language ?? string.Empty,
             },
-        };
-
-    private static DateTime ToUtc(DateTime value) =>
-        value.Kind switch
-        {
-            DateTimeKind.Utc => value,
-            DateTimeKind.Local => value.ToUniversalTime(),
-            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
         };
 }

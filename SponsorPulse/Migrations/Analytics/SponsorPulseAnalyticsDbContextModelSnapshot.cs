@@ -61,6 +61,9 @@ namespace SponsorPulse.Migrations.Analytics
                     b.Property<int>("PeakViewerCount")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTimeOffset?>("StreamStartedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("ViewerCount")
                         .HasColumnType("INTEGER");
 

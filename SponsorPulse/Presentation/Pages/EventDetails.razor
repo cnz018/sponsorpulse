@@ -3,6 +3,7 @@
 @using SponsorPulse.Application.Common.Interfaces
 @using SponsorPulse.Application.Common.Extensions
 @using SponsorPulse.Domain.Entities
+@using SponsorPulse.Domain.Primitives
 @using SponsorPulse.Infrastructure.Persistence
 @using SponsorPulse.Infrastructure.Repositories
 @using SponsorPulse.Application.Services
@@ -57,7 +58,7 @@
                     </span>
                     <span class="meta-date">
                         <img src="https://api.iconify.design/ic:outline-calendar-today.svg" class="meta-icon" alt="" />
-                        @_event.Date.ToLocalTime().ToLongDateString()
+                        @DateHelper.ToLocal(_event.Date).ToLongDateString()
                     </span>
                     <span class="meta-slug">#@_event.Slug</span>
                 </div>
@@ -108,7 +109,10 @@
                 {
                     <div class="section mb-6">
                         <h3 class="section-title">Données Stream</h3>
-                        <TwitchFetcher EventToUpdate="@_event" OnDataUpdated="HandleDataUpdated" />
+                        <TwitchFetcher
+                            EventToUpdate="@_event"
+                            OnDataUpdated="HandleDataUpdated"
+                            OnStatusChanged="HandleTwitchStatusChanged" />
                     </div>
                 }
 
@@ -1312,6 +1316,30 @@
 
         context.Events.Update(_event);
         await context.SaveChangesAsync();
+        StateHasChanged();
+    }
+
+    private async Task HandleTwitchStatusChanged(Event updatedEvent)
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (!authState.TryGetUserId(out var userId))
+        {
+            return;
+        }
+
+        using var context = await DbFactory.CreateDbContextAsync();
+        context.SetCurrentUser(userId);
+        var trackedEvent = await context.Events.FirstOrDefaultAsync(item =>
+            item.Id == updatedEvent.Id
+        );
+        if (trackedEvent is null)
+        {
+            return;
+        }
+
+        trackedEvent.Status = updatedEvent.Status;
+        await context.SaveChangesAsync();
+        _event = updatedEvent;
         StateHasChanged();
     }
 

@@ -1,6 +1,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using SponsorPulse.Application.Events.Commands
 @using SponsorPulse.Domain.Entities
+@using SponsorPulse.Domain.Primitives
 @using SponsorPulse.Infrastructure.Persistence
 @using Microsoft.EntityFrameworkCore
 @inject IDbContextFactory<SponsorPulseDbContext> DbFactory
@@ -78,7 +79,8 @@
                     <label class="form-label" for="broadcaster-id">Broadcaster ID Twitch</label>
                     <div class="relative">
                         <span class="sp-input-prefix">https://twitch.tv/</span>
-                        <InputText id="broadcaster-id" class="sp-input sp-input-with-prefix" @bind-Value="command.BroadcasterId" placeholder="ex: wade971" />
+                        <InputText id="broadcaster-id" class="sp-input sp-input-with-prefix"
+                                   @bind-Value="command.BroadcasterId" placeholder="ex: wade971" />
                     </div>
                     <ValidationMessage For="@(() => command.BroadcasterId)" />
                     <p class="text-xs text-gray-500 mt-2">Saisissez l'identifiant Twitch de la chaîne présente dans l'URL.
@@ -279,19 +281,24 @@
         var newEvent = Event.Create(
             command.Name,
             command.Description,
-            DateTime.SpecifyKind(eventDateLocal, DateTimeKind.Local).ToUniversalTime(),
+            DateHelper.ToUtc(eventDateLocal),
             command.StreamPlatform,
             command.BroadcasterId
         );
 
-        newEvent.StartedAt = DateTime.SpecifyKind(startedAtLocal, DateTimeKind.Local).ToUniversalTime();
+        newEvent.StartedAt = DateHelper.ToUtc(startedAtLocal);
+        newEvent.Status = EventStatus.Scheduled;
 
         // Ajouter les paramètres de recherche sociale si fournis
         newEvent = newEvent with
         {
             TwitterHashtags = command.TwitterHashtags?.Trim(),
-            SocialStartDate = command.SocialStartDate,
-            SocialEndDate = command.SocialEndDate
+            SocialStartDate = command.SocialStartDate.HasValue
+                ? DateHelper.ToUtc(command.SocialStartDate.Value)
+                : null,
+            SocialEndDate = command.SocialEndDate.HasValue
+                ? DateHelper.ToUtc(command.SocialEndDate.Value)
+                : null,
         };
 
         // 3. Persistance via EF Core
