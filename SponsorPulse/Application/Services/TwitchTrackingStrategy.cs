@@ -16,24 +16,24 @@ public class TwitchTrackingStrategy(HttpClient httpClient, ILogger<TwitchTrackin
     private readonly HttpClient _httpClient = httpClient;
     private readonly ILogger<TwitchTrackingStrategy> _logger = logger;
 
-    public async Task<object> CaptureAsync(string broadcasterId, Guid? userId = null)
+    public async Task<object> CaptureAsync(string broadcasterLogin, Guid? userId = null)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(broadcasterId))
+            if (string.IsNullOrWhiteSpace(broadcasterLogin))
             {
-                return Result<TwitchMetrics>.Failure("A Twitch broadcaster ID is required.");
+                return Result<TwitchMetrics>.Failure("A Twitch broadcaster login is required.");
             }
 
-            if (Uri.IsWellFormedUriString(broadcasterId, UriKind.Absolute))
+            if (Uri.IsWellFormedUriString(broadcasterLogin, UriKind.Absolute))
             {
-                broadcasterId = new Uri(broadcasterId).Segments.Last().Trim('/');
+                broadcasterLogin = new Uri(broadcasterLogin).Segments.Last().Trim('/');
             }
 
-            var broadcasterQuery = broadcasterId.All(char.IsAsciiDigit) ? "user_id" : "user_login";
+            var broadcasterQuery = broadcasterLogin.All(char.IsAsciiDigit) ? "user_id" : "user_login";
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
-                $"https://api.twitch.tv/helix/streams?{broadcasterQuery}={Uri.EscapeDataString(broadcasterId)}"
+                $"https://api.twitch.tv/helix/streams?{broadcasterQuery}={Uri.EscapeDataString(broadcasterLogin)}"
             );
 
             if (userId.HasValue)
@@ -42,9 +42,12 @@ public class TwitchTrackingStrategy(HttpClient httpClient, ILogger<TwitchTrackin
             }
 
             using var response = await _httpClient.SendAsync(request);
+
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Twitch returned status {StatusCode}.", response.StatusCode);
+                
+                
                 return Result<TwitchMetrics>.Failure(
                     $"Twitch API returned {(int)response.StatusCode}."
                 );
@@ -64,14 +67,14 @@ public class TwitchTrackingStrategy(HttpClient httpClient, ILogger<TwitchTrackin
             {
                 _logger.LogInformation(
                     "Twitch returned no live stream for broadcaster {BroadcasterId}.",
-                    broadcasterId
+                    broadcasterLogin
                 );
                 return Result<TwitchMetrics>.Success(TwitchMetrics.Empty);
             }
 
             _logger.LogInformation(
                 "Twitch metrics mapped for broadcaster {BroadcasterId}: {ViewerCount} viewers, game {GameName}.",
-                broadcasterId,
+                broadcasterLogin,
                 stream.ViewerCount,
                 stream.GameName
             );
@@ -91,7 +94,7 @@ public class TwitchTrackingStrategy(HttpClient httpClient, ILogger<TwitchTrackin
             _logger.LogError(
                 exception,
                 "Twitch capture failed for broadcaster {BroadcasterId}.",
-                broadcasterId
+                broadcasterLogin
             );
             return Result<TwitchMetrics>.Failure("Twitch capture failed.");
         }

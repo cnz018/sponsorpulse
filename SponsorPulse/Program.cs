@@ -9,8 +9,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using QuestPDF.Infrastructure;
-using SponsorPulse.Domain.Entities;
 using SponsorPulse.Application.Services;
+using SponsorPulse.Domain.Entities;
 using SponsorPulse.Infrastructure.Api.Extensions;
 using SponsorPulse.Infrastructure.DependencyInjection;
 using SponsorPulse.Infrastructure.Persistence;
@@ -23,6 +23,13 @@ SQLitePCL.Batteries_V2.Init();
 var builder = WebApplication.CreateBuilder(args);
 
 QuestPDF.Settings.License = LicenseType.Community;
+QuestPDF.Settings.ThrowOnMissingTextGlyphs = false;
+
+// Police de secours pour les emojis et symboles absents de Lato.
+using (
+    var emojiFont = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Fonts", "NotoEmoji.ttf"))
+)
+    QuestPDF.Drawing.FontManager.RegisterFontFromStream(emojiFont);
 
 // Configure Logging
 builder.Logging.AddDebug();
